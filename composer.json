@@ -33,7 +33,10 @@
         "laravel": {
             "providers": [
                 "Michael\\ContextLogging\\ContextLoggingServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "Log": "Michael\\ContextLogging\\Log"
+            }
         }
     },
     "minimum-stability": "stable",
