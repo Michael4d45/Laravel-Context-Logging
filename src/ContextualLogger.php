@@ -75,6 +75,10 @@ class ContextualLogger extends Logger
      */
     public function info($message, array $context = []): void
     {
+        // Debug: Confirm info method is called
+        if ($this->originalLogger) {
+            $this->originalLogger->log('debug', "[DEBUG] ContextualLogger.info called: $message", []);
+        }
         $this->log('info', $message, $context);
     }
 
