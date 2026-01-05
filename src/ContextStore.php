@@ -101,7 +101,7 @@ class ContextStore
     /**
      * Finalize the context with request completion data.
      */
-    public function finalize(int $statusCode = null): void
+    public function finalize(?int $statusCode = null): void
     {
         if ($this->startTime !== null) {
             $this->context['duration_ms'] = round((microtime(true) - $this->startTime) * 1000, 2);
