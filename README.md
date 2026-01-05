@@ -45,9 +45,9 @@ use Michael4d45\ContextLogging\Middleware\EmitContextMiddleware;
 ```
 
 * `RequestContextMiddleware` runs early and seeds request metadata.
-* `EmitContextMiddleware` runs at termination and emits the structured log entry.
+* `EmitContextMiddleware` implements both `handle` and `terminate` methods, ensuring it runs during request processing and emits the structured log entry after the response is sent.
 
-Appending ensures the middleware runs after Laravel's core request processing.
+Both middleware are appended to run after Laravel's core request processing.
 
 ### Ordering Considerations
 
@@ -94,7 +94,7 @@ use Michael4d45\ContextLogging\Middleware\EmitContextMiddleware;
 })
 ```
 
-When using `use()`, Laravel **does not** automatically include defaults—you are responsible for the full stack.
+When using `use()`, Laravel **does not** automatically include defaults—you are responsible for the full stack. Both middleware should be included in the array.
 
 ### Notes
 

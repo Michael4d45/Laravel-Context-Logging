@@ -2,6 +2,7 @@
 
 namespace Michael4d45\ContextLogging\Middleware;
 
+use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Michael4d45\ContextLogging\ContextStore;
@@ -18,6 +19,14 @@ class EmitContextMiddleware
     public function __construct(
         protected ContextStore $contextStore
     ) {}
+
+    /**
+     * Handle an incoming request.
+     */
+    public function handle(Request $request, Closure $next)
+    {
+        return $next($request);
+    }
 
     /**
      * Handle the terminating middleware.
