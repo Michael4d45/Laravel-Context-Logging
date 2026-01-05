@@ -1,8 +1,14 @@
 {
-    "name": "michael/context-logging",
+    "name": "michael4d45/context-logging",
     "description": "Contextual logging for Laravel applications",
     "type": "library",
     "license": "MIT",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/Michael4d45/Context-Logging"
+        }
+    ],
     "authors": [
         {
             "name": "Michael",

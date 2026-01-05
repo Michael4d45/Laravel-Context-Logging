@@ -1,26 +1,75 @@
 # Composer
 /vendor/
-/composer.lock
+composer.lock
 
 # PHP
 *.php~
+.phpunit.result.cache
+.phpunit.cache/
 
-# IDEs
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDEs and editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
-
-# Tests
-.phpunit.result.cache
 
 # Logs
 *.log
+logs/
+
+# Cache
+.cache/
+.php-cs-fixer.cache
+
+# Testing
+/coverage/
+/test-results/
+/.phpunit.result.cache
 
 # Temporary files
-/tmp/
-/temp/
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Node.js (if any frontend assets are added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Laravel specific (if applicable)
+storage/app/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*
+.phpunit.result.cache
+
+# Build artifacts
+/build/
+/dist/
+
+# Documentation builds
+/docs/_build/
+
+# Backup files
+*.bak
+*.backup
+*.orig

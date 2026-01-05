@@ -1,8 +1,8 @@
 # Contextual Logging for Laravel
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/michael/context-logging.svg?style=flat-square)](https://packagist.org/packages/michael/context-logging)
-[![Tests](https://img.shields.io/github/actions/workflow/status/michael/context-logging/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/michael/context-logging/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/michael/context-logging.svg?style=flat-square)](https://packagist.org/packages/michael/context-logging)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/michael4d45/context-logging.svg?style=flat-square)](https://packagist.org/packages/michael4d45/context-logging)
+[![Tests](https://img.shields.io/github/actions/workflow/status/Michael4d45/Context-Logging/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/Michael4d45/Context-Logging/actions?query=workflow%3Arun-tests+branch%3Amain)
+[![Total Downloads](https://img.shields.io/packagist/dt/michael4d45/context-logging.svg?style=flat-square)](https://packagist.org/packages/michael4d45/context-logging)
 
 This package provides a structured, context-first logging model for Laravel applications.
 
@@ -15,7 +15,7 @@ Instead of emitting many unstructured log lines during execution, the system acc
 You can install the package via composer:
 
 ```bash
-composer require michael/context-logging
+composer require michael4d45/context-logging
 ```
 
 The package will automatically register itself thanks to Laravel's package discovery.
@@ -36,6 +36,20 @@ Request termination → single structured log → Laravel logger → output
 ```
 
 Log calls become **annotations**, not emissions.
+
+## Philosophy: Wide Events vs Scattered Logs
+
+Traditional logging scatters context across multiple log lines, making debugging a painful exercise in grep archaeology. When something goes wrong, you end up searching through dozens of disconnected log entries, trying to piece together what happened.
+
+**Wide Events** flip this paradigm: instead of many narrow logs, you get one comprehensive event per request containing all the context you need. This transforms debugging from guesswork into analysis.
+
+**The difference is night and day:**
+- **Scattered Logs**: "Let me grep through 50 services and hope I find something"
+- **Wide Events**: "Show me all checkout failures for premium users in the last hour, grouped by error code"
+
+One query. Sub-second results. Root cause identified.
+
+Your logs stop lying to you. They start telling the whole truth.
 
 ## Usage
 
