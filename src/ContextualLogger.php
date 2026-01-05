@@ -17,8 +17,7 @@ class ContextualLogger extends Logger
         protected ContextStore $contextStore,
         protected $originalLogger = null
     ) {
-        // Call parent constructor with the original logger to maintain compatibility
-        // If no logger provided, use a dummy logger for testing
+        // Call parent constructor with the original logger or a null logger for testing
         $loggerToUse = $originalLogger ?: new \Psr\Log\NullLogger();
         parent::__construct($loggerToUse, app('events'));
     }
@@ -92,12 +91,7 @@ class ContextualLogger extends Logger
      */
     public function log($level, $message, array $context = []): void
     {
-        // Forward to original logger for normal logging behavior
-        if ($this->originalLogger) {
-            $this->originalLogger->log($level, $message, $context);
-        }
-
-        // Also accumulate in context store for wide event
+        // Only accumulate in context store for wide event (no pass-through)
         $this->contextStore->addEvent(
             (string) $level,
             (string) $message,

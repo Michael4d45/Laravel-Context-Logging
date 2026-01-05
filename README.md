@@ -123,23 +123,26 @@ Application code → Log::info() → formatter → handler → output
 ### Contextual Logging
 
 ```
-Application code → Log::info() → in-memory context
-Request termination → single structured log → Laravel logger → output
+Application code → Log::info() → in-memory context only
+Request termination → single wide event → Laravel logger → output
 ```
 
-Log calls become **annotations**, not emissions.
+Log calls become **annotations** that are collected into comprehensive wide events.
 
-## Philosophy: Wide Events vs Scattered Logs
+## Philosophy: Wide Events Only
 
-Traditional logging scatters context across multiple log lines, making debugging a painful exercise in grep archaeology. When something goes wrong, you end up searching through dozens of disconnected log entries, trying to piece together what happened.
+This package embraces **Wide Events** exclusively - no more scattered logs! Instead of emitting individual log entries throughout request processing, all logging calls are accumulated and emitted as a single comprehensive event at request completion.
 
-**Wide Events** flip this paradigm: instead of many narrow logs, you get one comprehensive event per request containing all the context you need. This transforms debugging from guesswork into analysis.
+**Why Wide Events?**
+- **Complete context**: Every log call from the entire request in one place
+- **Request metadata**: Method, path, duration, status, user info
+- **Temporal ordering**: All events with precise timestamps
+- **Query-friendly**: Single event per request for analysis
+- **Clean logs**: No scattered entries to grep through
 
-**The difference is night and day:**
-- **Scattered Logs**: "Let me grep through 50 services and hope I find something"
-- **Wide Events**: "Show me all checkout failures for premium users in the last hour, grouped by error code"
-
-One query. Sub-second results. Root cause identified.
+**The transformation:**
+- ❌ **Before**: Dozens of individual log lines per request
+- ✅ **After**: One structured event containing everything
 
 Your logs stop lying to you. They start telling the whole truth.
 
@@ -178,42 +181,53 @@ class OrderController extends Controller
 }
 ```
 
-Instead of emitting 3 separate log entries, this produces a single structured log:
+Instead of emitting 3 separate log entries, this produces a single wide event:
 
 ```json
 {
+  "message": "Request completed",
   "context": {
-    "request_id": "550e8400-e29b-41d4-a716-446655440000",
-    "method": "POST",
-    "path": "orders",
-    "user_id": 42,
-    "status": 200,
-    "duration_ms": 83.4
+    "context": {
+      "request_id": "550e8400-e29b-41d4-a716-446655440000",
+      "method": "POST",
+      "path": "orders",
+      "user_id": 42,
+      "status": 200,
+      "duration_ms": 83.4
+    },
+    "events": [
+      {
+        "level": "info",
+        "message": "Order placed",
+        "context": {
+          "order_id": 123
+        },
+        "timestamp": 1767636443.123604
+      },
+      {
+        "level": "info",
+        "message": "Payment processed",
+        "context": {
+          "amount": 99.99
+        },
+        "timestamp": 1767636443.123730
+      },
+      {
+        "level": "error",
+        "message": "Order processing failed",
+        "context": {
+          "error": "Payment gateway timeout",
+          "order_id": 123
+        },
+        "timestamp": 1767636443.296303
+      }
+    ]
   },
-  "events": [
-    {
-      "level": "info",
-      "message": "Order placed",
-      "context": {
-        "order_id": 123
-      }
-    },
-    {
-      "level": "info",
-      "message": "Payment processed",
-      "context": {
-        "amount": 99.99
-      }
-    },
-    {
-      "level": "error",
-      "message": "Order processing failed",
-      "context": {
-        "error": "Payment gateway timeout",
-        "order_id": 123
-      }
-    }
-  ]
+  "level": 200,
+  "level_name": "INFO",
+  "channel": "local",
+  "datetime": "2026-01-05T18:07:23.389088+00:00",
+  "extra": {}
 }
 ```
 
@@ -238,18 +252,15 @@ Instead of emitting 3 separate log entries, this produces a single structured lo
 
 ## Configuration
 
-The package works out of the box with no configuration required. However, you can publish the configuration file for customization:
+The package works out of the box with no configuration required. It provides wide events exclusively - no individual log pass-through.
+
+You can optionally publish the configuration file for future customization:
 
 ```bash
 php artisan vendor:publish --provider="Michael4d45\\ContextLogging\\ContextLoggingServiceProvider" --tag=config
 ```
 
-This will create `config/context-logging.php` with options for:
-
-- Enabling/disabling the package
-- Controlling which request fields are included
-- Specifying correlation headers for distributed tracing
-- Future sampling configuration
+This creates `config/context-logging.php` for future options like sampling rates, field filtering, and custom context enrichment.
 
 ## Compatibility
 
