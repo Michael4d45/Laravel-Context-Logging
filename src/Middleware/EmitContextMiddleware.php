@@ -33,19 +33,13 @@ class EmitContextMiddleware
      */
     public function terminate(Request $request, Response $response): void
     {
-        // Debug: Log that terminate was called
-        error_log("EmitContextMiddleware.terminate called");
-
         // Finalize the context with response information
         $this->contextStore->finalize($response->getStatusCode());
 
         // Only emit if we have events to log
         if (!$this->contextStore->hasEvents()) {
-            error_log("EmitContextMiddleware: No events to log");
             return;
         }
-
-        error_log("EmitContextMiddleware: Emitting wide event with " . count($this->contextStore->getEvents()) . " events");
 
         // Get the structured payload
         $payload = $this->contextStore->getPayload();
