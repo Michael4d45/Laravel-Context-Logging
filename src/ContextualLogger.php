@@ -2,24 +2,30 @@
 
 namespace Michael4d45\ContextLogging;
 
+use Illuminate\Log\Logger;
 use Psr\Log\LoggerInterface;
 
 /**
  * Contextual Logger Implementation.
  *
- * Mirrors Laravel's logging API but accumulates events instead of emitting them.
+ * Extends Laravel's Logger but accumulates events instead of emitting them.
  * All log calls become context annotations in the ContextStore.
  */
-class ContextualLogger implements LoggerInterface
+class ContextualLogger extends Logger
 {
     public function __construct(
-        protected ContextStore $contextStore
-    ) {}
+        protected ContextStore $contextStore,
+        protected $originalLogger = null
+    ) {
+        // Call parent constructor with the original logger to maintain compatibility
+        // If no logger provided, use a dummy logger for testing
+        parent::__construct($originalLogger ?: new \Psr\Log\NullLogger(), app('events'));
+    }
 
     /**
      * {@inheritdoc}
      */
-    public function emergency(\Stringable|string $message, array $context = []): void
+    public function emergency($message, array $context = []): void
     {
         $this->log('emergency', $message, $context);
     }
@@ -27,7 +33,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function alert(\Stringable|string $message, array $context = []): void
+    public function alert($message, array $context = []): void
     {
         $this->log('alert', $message, $context);
     }
@@ -35,7 +41,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function critical(\Stringable|string $message, array $context = []): void
+    public function critical($message, array $context = []): void
     {
         $this->log('critical', $message, $context);
     }
@@ -43,7 +49,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function error(\Stringable|string $message, array $context = []): void
+    public function error($message, array $context = []): void
     {
         $this->log('error', $message, $context);
     }
@@ -51,7 +57,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function warning(\Stringable|string $message, array $context = []): void
+    public function warning($message, array $context = []): void
     {
         $this->log('warning', $message, $context);
     }
@@ -59,7 +65,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function notice(\Stringable|string $message, array $context = []): void
+    public function notice($message, array $context = []): void
     {
         $this->log('notice', $message, $context);
     }
@@ -67,7 +73,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function info(\Stringable|string $message, array $context = []): void
+    public function info($message, array $context = []): void
     {
         $this->log('info', $message, $context);
     }
@@ -75,7 +81,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function debug(\Stringable|string $message, array $context = []): void
+    public function debug($message, array $context = []): void
     {
         $this->log('debug', $message, $context);
     }
@@ -83,7 +89,7 @@ class ContextualLogger implements LoggerInterface
     /**
      * {@inheritdoc}
      */
-    public function log($level, \Stringable|string $message, array $context = []): void
+    public function log($level, $message, array $context = []): void
     {
         $this->contextStore->addEvent(
             (string) $level,
