@@ -38,12 +38,8 @@ class EmitContextMiddleware
 
         // Only emit if we have events to log
         if (!$this->contextStore->hasEvents()) {
-            // Debug: Log that no events were found
-            error_log("EmitContextMiddleware: No events to emit");
             return;
         }
-
-        error_log("EmitContextMiddleware: Emitting wide event with " . count($this->contextStore->getEvents()) . " events");
 
         // Get the structured payload
         $payload = $this->contextStore->getPayload();
