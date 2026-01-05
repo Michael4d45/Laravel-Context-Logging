@@ -35,8 +35,8 @@ Append the package middleware to the global stack:
 
 ```php
 use Illuminate\Foundation\Configuration\Middleware;
-use Michael\ContextLogging\Middleware\RequestContextMiddleware;
-use Michael\ContextLogging\Middleware\EmitContextMiddleware;
+use Michael4d45\ContextLogging\Middleware\RequestContextMiddleware;
+use Michael4d45\ContextLogging\Middleware\EmitContextMiddleware;
 
 ->withMiddleware(function (Middleware $middleware): void {
     $middleware->append(RequestContextMiddleware::class);
@@ -74,8 +74,8 @@ Example:
 
 ```php
 use Illuminate\Foundation\Configuration\Middleware;
-use Michael\ContextLogging\Middleware\RequestContextMiddleware;
-use Michael\ContextLogging\Middleware\EmitContextMiddleware;
+use Michael4d45\ContextLogging\Middleware\RequestContextMiddleware;
+use Michael4d45\ContextLogging\Middleware\EmitContextMiddleware;
 
 ->withMiddleware(function (Middleware $middleware): void {
     $middleware->use([
@@ -241,7 +241,7 @@ Instead of emitting 3 separate log entries, this produces a single structured lo
 The package works out of the box with no configuration required. However, you can publish the configuration file for customization:
 
 ```bash
-php artisan vendor:publish --provider="Michael\\ContextLogging\\ContextLoggingServiceProvider" --tag=config
+php artisan vendor:publish --provider="Michael4d45\\ContextLogging\\ContextLoggingServiceProvider" --tag=config
 ```
 
 This will create `config/context-logging.php` with options for:

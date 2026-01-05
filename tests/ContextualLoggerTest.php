@@ -1,9 +1,9 @@
 <?php
 
-namespace Michael\ContextLogging\Tests;
+namespace Michael4d45\ContextLogging\Tests;
 
-use Michael\ContextLogging\ContextStore;
-use Michael\ContextLogging\ContextualLogger;
+use Michael4d45\ContextLogging\ContextStore;
+use Michael4d45\ContextLogging\ContextualLogger;
 use Orchestra\Testbench\TestCase;
 
 class ContextualLoggerTest extends TestCase

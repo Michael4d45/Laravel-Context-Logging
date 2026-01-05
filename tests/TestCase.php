@@ -1,8 +1,8 @@
 <?php
 
-namespace Michael\ContextLogging\Tests;
+namespace Michael4d45\ContextLogging\Tests;
 
-use Michael\ContextLogging\ContextLoggingServiceProvider;
+use Michael4d45\ContextLogging\ContextLoggingServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
@@ -17,7 +17,7 @@ abstract class TestCase extends Orchestra
     protected function getPackageAliases($app)
     {
         return [
-            'ContextLog' => \Michael\ContextLogging\Log::class,
+            'ContextLog' => \Michael4d45\ContextLogging\Log::class,
         ];
     }
 }

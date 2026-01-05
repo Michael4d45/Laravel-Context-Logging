@@ -1,6 +1,6 @@
 <?php
 
-namespace Michael\ContextLogging;
+namespace Michael4d45\ContextLogging;
 
 use Psr\Log\LoggerInterface;
 

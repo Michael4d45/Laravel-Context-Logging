@@ -1,10 +1,10 @@
 <?php
 
-namespace Michael\ContextLogging\Middleware;
+namespace Michael4d45\ContextLogging\Middleware;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Michael\ContextLogging\ContextStore;
+use Michael4d45\ContextLogging\ContextStore;
 use Illuminate\Support\Facades\Log;
 
 /**

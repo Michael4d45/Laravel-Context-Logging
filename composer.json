@@ -21,21 +21,21 @@
     },
     "autoload": {
         "psr-4": {
-            "Michael\\ContextLogging\\": "src/"
+            "Michael4d45\\ContextLogging\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Michael\\ContextLogging\\Tests\\": "tests/"
+            "Michael4d45\\ContextLogging\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Michael\\ContextLogging\\ContextLoggingServiceProvider"
+                "Michael4d45\\ContextLogging\\ContextLoggingServiceProvider"
             ],
             "aliases": {
-                "Log": "Michael\\ContextLogging\\Log"
+                "Log": "Michael4d45\\ContextLogging\\Log"
             }
         }
     },
