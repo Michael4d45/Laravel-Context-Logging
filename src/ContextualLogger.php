@@ -92,6 +92,12 @@ class ContextualLogger extends Logger
      */
     public function log($level, $message, array $context = []): void
     {
+        // Forward to original logger for normal logging behavior
+        if ($this->originalLogger) {
+            $this->originalLogger->log($level, $message, $context);
+        }
+
+        // Also accumulate in context store for wide event
         $this->contextStore->addEvent(
             (string) $level,
             (string) $message,
