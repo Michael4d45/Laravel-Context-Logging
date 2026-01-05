@@ -18,7 +18,99 @@ You can install the package via composer:
 composer require michael4d45/context-logging
 ```
 
-The package will automatically register itself thanks to Laravel's package discovery.
+## Laravel Middleware Registration
+
+This package requires two global HTTP middleware to function correctly:
+
+* One to initialize request-level context
+* One to emit a single structured log entry after the request completes
+
+Laravel 11 and recent Laravel 10 versions register middleware via `bootstrap/app.php`.
+
+### Registering Global Middleware
+
+Open `bootstrap/app.php` and locate the `withMiddleware` section.
+
+Append the package middleware to the global stack:
+
+```php
+use Illuminate\Foundation\Configuration\Middleware;
+use Michael\ContextLogging\Middleware\RequestContextMiddleware;
+use Michael\ContextLogging\Middleware\EmitContextMiddleware;
+
+->withMiddleware(function (Middleware $middleware): void {
+    $middleware->append(RequestContextMiddleware::class);
+    $middleware->append(EmitContextMiddleware::class);
+})
+```
+
+* `RequestContextMiddleware` runs early and seeds request metadata.
+* `EmitContextMiddleware` runs at termination and emits the structured log entry.
+
+Appending ensures the middleware runs after Laravel's core request processing.
+
+### Ordering Considerations
+
+Middleware execution order matters.
+
+Recommended placement:
+
+* `RequestContextMiddleware` **after** request normalization middleware (e.g. trimming, proxy handling)
+* `EmitContextMiddleware` **at the end** of the global stack
+
+Using `append()` achieves this safely.
+
+If you need the request context earlier, you may use `prepend()` instead:
+
+```php
+$middleware->prepend(RequestContextMiddleware::class);
+```
+
+### Manually Managing the Global Middleware Stack (Optional)
+
+If your application explicitly defines Laravel's global middleware stack using `use()`, include the package middleware in that list.
+
+Example:
+
+```php
+use Illuminate\Foundation\Configuration\Middleware;
+use Michael\ContextLogging\Middleware\RequestContextMiddleware;
+use Michael\ContextLogging\Middleware\EmitContextMiddleware;
+
+->withMiddleware(function (Middleware $middleware): void {
+    $middleware->use([
+        \Illuminate\Foundation\Http\Middleware\InvokeDeferredCallbacks::class,
+        \Illuminate\Http\Middleware\TrustProxies::class,
+        \Illuminate\Http\Middleware\HandleCors::class,
+        \Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance::class,
+        \Illuminate\Http\Middleware\ValidatePostSize::class,
+        \Illuminate\Foundation\Http\Middleware\TrimStrings::class,
+        \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+
+        // Contextual logging
+        RequestContextMiddleware::class,
+        EmitContextMiddleware::class,
+    ]);
+})
+```
+
+When using `use()`, Laravel **does not** automatically include defaults—you are responsible for the full stack.
+
+### Notes
+
+* Middleware registration is intentionally **not** automatic.
+* This avoids surprising behavior and allows explicit control.
+* No changes to route middleware or middleware groups are required.
+
+### Summary
+
+To enable contextual logging in Laravel:
+
+1. Install the package via Composer
+2. Register the two global middleware in `bootstrap/app.php`
+3. Continue using `Log::info()`, `Log::error()`, etc. as usual
+
+Once enabled, the package will emit **one structured log event per request** using Laravel's existing logging configuration.
 
 ## How It Works
 
