@@ -18,6 +18,6 @@ class Log extends Facade
      */
     protected static function getFacadeAccessor(): string
     {
-        return 'contextual-logger';
+        return 'log';
     }
 }
