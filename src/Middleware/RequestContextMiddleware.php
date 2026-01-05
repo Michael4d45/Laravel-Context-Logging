@@ -24,6 +24,9 @@ class RequestContextMiddleware
      */
     public function handle(Request $request, Closure $next)
     {
+        // Debug: Log that middleware is running
+        error_log("RequestContextMiddleware: Initializing context store");
+
         // Initialize the context store for this request
         $this->contextStore->initialize();
 
