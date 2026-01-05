@@ -6,7 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Michael4d45\ContextLogging\ContextStore;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Log\LogManager;
 
 /**
  * Emit Context Middleware (Terminating).
@@ -71,8 +71,9 @@ class EmitContextMiddleware
             }
         }
 
-        // Emit the structured log using Laravel's standard logger
-        // This ensures full compatibility with existing logging configuration
-        Log::log($highestLevel, 'Request completed', $payload);
+        // Emit the structured log using a fresh LogManager instance
+        // This bypasses our contextual logging to actually emit the wide event
+        $originalLogManager = new LogManager(app());
+        $originalLogManager->log($highestLevel, 'Request completed', $payload);
     }
 }
