@@ -25,6 +25,12 @@ class ContextLoggingServiceProvider extends ServiceProvider
         $this->app->singleton('contextual-logger', function ($app) {
             return new ContextualLogger($app->make(ContextStore::class));
         });
+
+        // Override Laravel's default logger binding to use our contextual logger
+        // This ensures logger() function and other direct logger usage is captured
+        $this->app->singleton('log', function ($app) {
+            return $app->make('contextual-logger');
+        });
     }
 
     /**
