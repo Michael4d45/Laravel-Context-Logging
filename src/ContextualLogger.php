@@ -91,8 +91,10 @@ class ContextualLogger extends Logger
      */
     public function log($level, $message, array $context = []): void
     {
-        // Debug: Confirm ContextualLogger is being called
-        error_log("ContextualLogger.log called: $level - $message");
+        // TEMP: Use original logger to confirm ContextualLogger is working
+        if ($this->originalLogger) {
+            $this->originalLogger->log($level, "[DEBUG] ContextualLogger called: $message", $context);
+        }
 
         // Only accumulate in context store for wide event (no pass-through)
         $this->contextStore->addEvent(
