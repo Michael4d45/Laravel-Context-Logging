@@ -3,6 +3,8 @@
 namespace Michael4d45\ContextLogging;
 
 use Illuminate\Support\ServiceProvider;
+use Michael4d45\ContextLogging\ContextStore;
+use Michael4d45\ContextLogging\ContextualLogger;
 
 /**
  * Context Logging Service Provider.
