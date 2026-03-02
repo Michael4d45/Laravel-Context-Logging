@@ -25,7 +25,7 @@ This package requires two global HTTP middleware to function correctly:
 * One to initialize request-level context
 * One to emit a single structured log entry after the request completes
 
-Laravel 11 and recent Laravel 10 versions register middleware via `bootstrap/app.php`.
+Laravel 12+ registers middleware via `bootstrap/app.php`.
 
 ### Registering Global Middleware
 
@@ -261,6 +261,117 @@ php artisan vendor:publish --provider="Michael4d45\\ContextLogging\\ContextLoggi
 ```
 
 This creates `config/context-logging.php` for future options like sampling rates, field filtering, and custom context enrichment.
+
+### Outgoing HTTP Sub-Context Hooks
+
+You can attach outbound HTTP request/response data as a sub-context layer without wrapping every `Http::` call.
+
+The package provides:
+
+- A global HTTP instrumentation service
+- Hook registration methods you can call from your app
+- Optional manual methods for per-call control
+
+#### Global Setup
+
+Outbound HTTP instrumentation is auto-registered when the package boots while `http.enabled=true`.
+
+You can still register manually in `App\Providers\AppServiceProvider::boot()` if you want explicit control:
+
+```php
+use Michael4d45\ContextLogging\HttpClientInstrumentation;
+use Michael4d45\ContextLogging\HttpContextHooks;
+
+public function boot(): void
+{
+  // Optional explicit registration.
+  app(HttpClientInstrumentation::class)->register();
+
+  // Optional request hook.
+  HttpContextHooks::beforeRequest(function (array $payload): array {
+    $payload['request']['service'] = 'external-api';
+
+    return $payload;
+  });
+
+  // Optional response hook.
+  HttpContextHooks::afterResponse(function (array $payload): array {
+    $payload['response']['classified_as'] = ($payload['response']['status'] ?? 0) >= 500
+      ? 'server_error'
+      : 'ok';
+
+    return $payload;
+  });
+}
+```
+
+Once registered, all outbound `Http::get/post/...` calls are captured automatically.
+
+You can control payload collection in `config/context-logging.php`:
+
+```php
+'http' => [
+  'enabled' => true,
+  'capture_headers' => false,
+  'capture_body' => false,
+  'redact_value' => '[redacted]',
+  'redact_body_fields' => ['password', 'token', 'secret'],
+  'redact_query_params' => ['token', 'access_token', 'api_key'],
+],
+```
+
+Set `capture_body` to `true` when you need request/response body capture.
+When body capture is enabled, configured `redact_body_fields` are masked recursively for JSON payloads.
+Captured requests also include `path` and `query_params`, and configured `redact_query_params` are masked.
+
+#### Optional Manual Control
+
+`ContextStore` provides three methods:
+
+- `beginHttpCall(array $request): string`
+- `addHttpContext(string $id, array $extra): void`
+- `completeHttpCall(string $id, array $response): void`
+
+You can still use these for fine-grained control around specific calls:
+
+```php
+use Illuminate\Support\Facades\Http;
+use Michael4d45\ContextLogging\ContextStore;
+
+public function syncOrders(ContextStore $contextStore): void
+{
+  $httpId = $contextStore->beginHttpCall([
+    'method' => 'GET',
+    'url' => 'https://api.example.com/orders',
+  ]);
+
+  try {
+    $response = Http::get('https://api.example.com/orders');
+
+    $contextStore->addHttpContext($httpId, [
+      'service' => 'orders-api',
+      'operation' => 'sync_orders',
+    ]);
+
+    $contextStore->completeHttpCall($httpId, [
+      'status' => $response->status(),
+      'ok' => $response->ok(),
+    ]);
+  } catch (\Throwable $exception) {
+    $contextStore->completeHttpCall($httpId, [
+      'status' => 0,
+      'error' => $exception->getMessage(),
+    ]);
+
+    throw $exception;
+  }
+}
+```
+
+When at least one outbound call is tracked, emitted payloads include an additive `http_calls` key.
+
+Hooks are registered through `HttpContextHooks::beforeRequest()` and `HttpContextHooks::afterResponse()`.
+If a hook throws an exception, processing continues and hook error details are attached to the tracked HTTP call.
 
 ## Compatibility
 

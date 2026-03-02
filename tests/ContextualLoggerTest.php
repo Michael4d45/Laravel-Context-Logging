@@ -4,6 +4,7 @@ namespace Michael4d45\ContextLogging\Tests;
 
 use Michael4d45\ContextLogging\ContextStore;
 use Michael4d45\ContextLogging\ContextualLogger;
+use PHPUnit\Framework\Attributes\Test;
 use Orchestra\Testbench\TestCase;
 
 class ContextualLoggerTest extends TestCase
@@ -19,7 +20,7 @@ class ContextualLoggerTest extends TestCase
         $this->logger = new ContextualLogger($this->contextStore);
     }
 
-    /** @test */
+    #[Test]
     public function it_accumulates_log_calls_as_events()
     {
         $this->logger->info('User logged in', ['user_id' => 123]);
@@ -37,7 +38,7 @@ class ContextualLoggerTest extends TestCase
         $this->assertEquals(['error' => 'timeout'], $events[1]['context']);
     }
 
-    /** @test */
+    #[Test]
     public function it_supports_all_log_levels()
     {
         $levels = ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug'];
@@ -55,7 +56,7 @@ class ContextualLoggerTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_stringable_messages()
     {
         $message = new class implements \Stringable {
@@ -71,7 +72,7 @@ class ContextualLoggerTest extends TestCase
         $this->assertEquals('Stringable message', $events[0]['message']);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_generic_log_method()
     {
         $this->logger->log('warning', 'Generic log message', ['key' => 'value']);
