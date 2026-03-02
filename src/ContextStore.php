@@ -139,16 +139,47 @@ class ContextStore
      */
     public function getPayload(): array
     {
-        $payload = [
-            'context' => $this->context,
-            'events' => $this->events,
-        ];
+        $combinedEvents = $this->events;
 
-        if (!empty($this->httpCalls)) {
-            $payload['http_calls'] = array_values($this->httpCalls);
+        // Add HTTP calls as single events
+        foreach ($this->httpCalls as $httpCall) {
+            $eventContext = [
+                'http_call_id' => $httpCall['id'],
+            ];
+            
+            $timestamp = null;
+            
+            if (isset($httpCall['request'])) {
+                $eventContext['request'] = $httpCall['request'];
+                $timestamp = $httpCall['request']['timestamp'];
+            }
+            
+            if (isset($httpCall['response'])) {
+                $eventContext['response'] = $httpCall['response'];
+                if ($timestamp === null) {
+                    $timestamp = $httpCall['response']['timestamp'];
+                }
+            }
+            
+            if ($timestamp !== null) {
+                $combinedEvents[] = [
+                    'level' => 'debug',
+                    'message' => 'HTTP Call',
+                    'context' => $eventContext,
+                    'timestamp' => $timestamp,
+                ];
+            }
         }
 
-        return $payload;
+        // Sort all events by timestamp
+        usort($combinedEvents, function ($a, $b) {
+            return $a['timestamp'] <=> $b['timestamp'];
+        });
+
+        return [
+            'context' => $this->context,
+            'events' => $combinedEvents,
+        ];
     }
 
     /**

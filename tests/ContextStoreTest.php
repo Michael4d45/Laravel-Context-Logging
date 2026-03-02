@@ -152,9 +152,24 @@ class ContextStoreTest extends TestCase
 
         $payload = $this->contextStore->getPayload();
 
-        $this->assertArrayHasKey('http_calls', $payload);
-        $this->assertCount(1, $payload['http_calls']);
-        $this->assertSame(202, $payload['http_calls'][0]['response']['status']);
+        $this->assertArrayNotHasKey('http_calls', $payload);
+        $this->assertArrayHasKey('events', $payload);
+        
+        // Find HTTP events in the events array
+        $httpEvents = array_filter($payload['events'], function ($event) {
+            return $event['message'] === 'HTTP Call';
+        });
+        
+        $this->assertCount(1, $httpEvents);
+        
+        $httpEvent = reset($httpEvents);
+        
+        $this->assertArrayHasKey('request', $httpEvent['context']);
+        $this->assertArrayHasKey('response', $httpEvent['context']);
+        $this->assertSame('POST', $httpEvent['context']['request']['method']);
+        $this->assertSame('https://api.example.com/payments', $httpEvent['context']['request']['url']);
+        $this->assertSame(202, $httpEvent['context']['response']['status']);
+        $this->assertSame($id, $httpEvent['context']['http_call_id']);
     }
 
     #[Test]
@@ -165,6 +180,13 @@ class ContextStoreTest extends TestCase
         $payload = $this->contextStore->getPayload();
 
         $this->assertArrayNotHasKey('http_calls', $payload);
+        
+        // Ensure no HTTP events in the events array
+        $httpEvents = array_filter($payload['events'], function ($event) {
+            return $event['message'] === 'HTTP Call';
+        });
+        
+        $this->assertEmpty($httpEvents);
     }
 
     #[Test]

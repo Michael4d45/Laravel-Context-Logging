@@ -368,7 +368,7 @@ public function syncOrders(ContextStore $contextStore): void
 }
 ```
 
-When at least one outbound call is tracked, emitted payloads include an additive `http_calls` key.
+When outbound HTTP calls are tracked, they appear as interleaved events in the `events` array, sorted by timestamp alongside other log events.
 
 Hooks are registered through `HttpContextHooks::beforeRequest()` and `HttpContextHooks::afterResponse()`.
 If a hook throws an exception, processing continues and hook error details are attached to the tracked HTTP call.
