@@ -147,6 +147,170 @@ class MonitorLogsCommand extends Command
         return str_replace(['<', '>'], ['\\<', '\\>'], $line);
     }
 
+    /**
+     * Output syntax-highlighted JSON (monokai-like style) as lines. Pass prefix to indent (e.g. "  <fg=gray>│</>   ").
+     *
+     * @param string|array<int|string, mixed> $json JSON string or decoded array
+     * @return array<int, string> Lines with Symfony Console color tags
+     */
+    protected function colorizeJson(string|array $json): array
+    {
+        if (is_array($json)) {
+            $decoded = $json;
+        } else {
+            $decoded = json_decode($json, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+                return [$this->escapeLine($json)];
+            }
+        }
+
+        return $this->colorizeJsonLines($decoded, 0);
+    }
+
+    /**
+     * @param array<int|string, mixed> $data
+     * @return array<int, string>
+     */
+    private function colorizeJsonLines(array $data, int $depth): array
+    {
+        $lines = [];
+        $indent = str_repeat('  ', $depth);
+        $isList = !$this->isAssoc($data);
+
+        if ($data === []) {
+            $lines[] = $indent . '<fg=gray>[]</>';
+
+            return $lines;
+        }
+
+        $open = $isList ? '<fg=gray>[</>' : '<fg=gray>{</>';
+        $close = $isList ? '<fg=gray>]</>' : '<fg=gray>}</>';
+        $lines[] = $indent . $open;
+
+        $idx = 0;
+        $last = array_key_last($data);
+        foreach ($data as $key => $value) {
+            $isLast = ($key === $last);
+            $comma = $isLast ? '' : '<fg=gray>,</>';
+            $innerIndent = str_repeat('  ', $depth + 1);
+
+            if ($isList) {
+                $valuePart = $this->colorizeJsonValue($value, $depth + 1);
+                if (is_array($valuePart)) {
+                    foreach ($valuePart as $nl) {
+                        $lines[] = $innerIndent . $nl;
+                    }
+                    $lines[array_key_last($lines)] .= $comma;
+                } else {
+                    $lines[] = $innerIndent . $valuePart . $comma;
+                }
+            } else {
+                $keyEsc = $this->escapeLine($this->escapeJsonString((string) $key));
+                $keyPart = '<fg=#e6db74>"' . $keyEsc . '"</><fg=gray>: </>';
+                $valuePart = $this->colorizeJsonValue($value, $depth + 1);
+                if (is_array($valuePart)) {
+                    $lines[] = $innerIndent . $keyPart . ltrim($valuePart[0]);
+                    foreach (array_slice($valuePart, 1) as $nl) {
+                        $lines[] = $innerIndent . $nl;
+                    }
+                    $lines[array_key_last($lines)] .= $comma;
+                } else {
+                    $lines[] = $innerIndent . $keyPart . $valuePart . $comma;
+                }
+            }
+            $idx++;
+        }
+
+        $lines[] = $indent . $close;
+
+        return $lines;
+    }
+
+    /**
+     * @return string|array<int, string> Single line or multiple lines (first line + continuation)
+     */
+    private function colorizeJsonValue(mixed $value, int $depth): string|array
+    {
+        if (is_array($value)) {
+            return $this->colorizeJsonLines($value, $depth);
+        }
+        if (is_string($value)) {
+            $esc = $this->escapeLine($this->escapeJsonString($value));
+
+            return '<fg=#e6db74>"</><fg=#a6e22e>' . $esc . '</><fg=#e6db74>"</>';
+        }
+        if (is_int($value) || is_float($value)) {
+            return '<fg=#ae81ff>' . (string) $value . '</>';
+        }
+        if (is_bool($value)) {
+            return '<fg=#ae81ff>' . ($value ? 'true' : 'false') . '</>';
+        }
+        if ($value === null) {
+            return '<fg=gray>null</>';
+        }
+
+        $encoded = json_encode($value);
+
+        return $encoded !== false ? $this->escapeLine($encoded) : '<fg=gray>null</>';
+    }
+
+    private function escapeJsonString(string $s): string
+    {
+        return str_replace(
+            ['\\', '"', "\n", "\r", "\t"],
+            ['\\\\', '\\"', '\\n', '\\r', '\\t'],
+            $s
+        );
+    }
+
+    /**
+     * Output a formatted URL breakdown (base, path, query params) with colors.
+     */
+    protected function formatUrl(string $url, string $barColor = 'gray'): void
+    {
+        $url = trim($url);
+        if ($url === '' || $url === 'null') {
+            return;
+        }
+
+        if (!preg_match('#^https?://#', $url)) {
+            $this->line("  <fg={$barColor}>│</>   " . $this->escapeLine($url));
+
+            return;
+        }
+
+        $parsed = parse_url($url);
+        $scheme = $parsed['scheme'] ?? 'https';
+        $host = $parsed['host'] ?? '';
+        $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+        $base = $scheme . '://' . $host . $port;
+        $path = $parsed['path'] ?? '/';
+        $query = $parsed['query'] ?? null;
+
+        $this->line("  <fg={$barColor}>│</>   <fg=green>Base:</> " . $this->escapeLine($base));
+        $this->line("  <fg={$barColor}>│</>   <fg=green>Path:</> " . $this->escapeLine($path));
+
+        if ($query !== null && $query !== '') {
+            $this->line("  <fg={$barColor}>│</>   <fg=green>Query Params:</>");
+            foreach (explode('&', $query) as $param) {
+                $eq = strpos($param, '=');
+                if ($eq !== false) {
+                    $key = substr($param, 0, $eq);
+                    $value = substr($param, $eq + 1);
+                    $value = rawurldecode($value);
+                    $this->line("  <fg={$barColor}>│</>     <fg=cyan>" . $this->escapeLine($key) . "</> = " . $this->escapeLine($value));
+                } else {
+                    $this->line("  <fg={$barColor}>│</>     " . $this->escapeLine($param));
+                }
+            }
+        }
+    }
+
+    protected function isUrl(string $value): bool
+    {
+        return preg_match('#^https?://[^\s]+$#', trim($value)) === 1;
+    }
+
     protected function formatLogEntry(array $entry): void
     {
         $level = $entry['level_name'] ?? 'UNKNOWN';
@@ -196,6 +360,16 @@ class MonitorLogsCommand extends Command
                 continue;
             }
             $value = $ctx[$key];
+            if ($key === 'full_url' && is_scalar($value) && $this->isUrl((string) $value)) {
+                $this->line('  <fg=gray>│</>   <options=bold>full_url</>:');
+                $this->formatUrl((string) $value, 'gray');
+                continue;
+            }
+            if (is_array($value)) {
+                $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>:');
+                $this->outputColorizedJson($this->colorizeJson($value), '  <fg=gray>│</>   ');
+                continue;
+            }
             $display = is_scalar($value) ? (string) $value : json_encode($value);
             $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>: ' . $this->escapeLine($display));
         }
@@ -203,12 +377,27 @@ class MonitorLogsCommand extends Command
         $rest = array_diff_key($ctx, array_flip($keys));
         if ($rest !== []) {
             foreach ($rest as $key => $value) {
+                if (is_array($value)) {
+                    $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>:');
+                    $this->outputColorizedJson($this->colorizeJson($value), '  <fg=gray>│</>   ');
+                    continue;
+                }
                 $display = is_scalar($value) ? (string) $value : json_encode($value);
                 $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>: ' . $this->escapeLine($display));
             }
         }
 
         $this->line('  <fg=gray>└─</>');
+    }
+
+    /**
+     * @param array<int, string> $lines Lines that may contain Symfony Console tags
+     */
+    protected function outputColorizedJson(array $lines, string $prefix): void
+    {
+        foreach ($lines as $line) {
+            $this->line($prefix . $line);
+        }
     }
 
     /**
@@ -285,6 +474,9 @@ class MonitorLogsCommand extends Command
 
         $this->line('  <fg=green>┌─ Incoming Request</>');
         $this->line('  <fg=green>│</>   <options=bold>' . $this->escapeLine((string) $method) . '</> ' . $this->escapeLine((string) $url));
+        if ($url !== '' && $this->isUrl($url)) {
+            $this->formatUrl($url, 'green');
+        }
         if ($ip !== null && $ip !== '') {
             $this->line('  <fg=green>│</>   IP: ' . $this->escapeLine((string) $ip));
         }
@@ -294,9 +486,17 @@ class MonitorLogsCommand extends Command
 
         if (is_array($body) && $body !== []) {
             $this->line('  <fg=green>│</>   <options=bold>Body:</>');
-            $this->formatNestedArray('  <fg=green>│</>   ', $body);
+            $colored = $this->colorizeJson($body);
+            $this->outputColorizedJson($colored, '  <fg=green>│</>   ');
         } elseif (!is_array($body) && (string) $body !== '') {
-            $this->line('  <fg=green>│</>   Body: ' . $this->escapeLine((string) $body));
+            $bodyStr = (string) $body;
+            $decoded = json_decode($bodyStr, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $this->line('  <fg=green>│</>   <options=bold>Body:</>');
+                $this->outputColorizedJson($this->colorizeJson($decoded), '  <fg=green>│</>   ');
+            } else {
+                $this->line('  <fg=green>│</>   Body: ' . $this->escapeLine($bodyStr));
+            }
         }
 
         if (is_array($queryParams) && $queryParams !== []) {
@@ -340,11 +540,19 @@ class MonitorLogsCommand extends Command
 
         if (is_array($body) && $body !== []) {
             $this->line('  <fg=magenta>│</>   <options=bold>Body:</>');
-            $this->formatNestedArray('  <fg=magenta>│</>   ', $body);
+            $colored = $this->colorizeJson($body);
+            $this->outputColorizedJson($colored, '  <fg=magenta>│</>   ');
         } elseif (is_string($body) && $body !== '') {
-            $preview = strlen($body) > 500 ? substr($body, 0, 500) . '…' : $body;
-            foreach (explode("\n", $preview) as $bodyLine) {
-                $this->line('  <fg=magenta>│</>   ' . $this->escapeLine($bodyLine));
+            $decoded = json_decode($body, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $this->line('  <fg=magenta>│</>   <options=bold>Body:</>');
+                $colored = $this->colorizeJson($decoded);
+                $this->outputColorizedJson($colored, '  <fg=magenta>│</>   ');
+            } else {
+                $preview = strlen($body) > 500 ? substr($body, 0, 500) . '…' : $body;
+                foreach (explode("\n", $preview) as $bodyLine) {
+                    $this->line('  <fg=magenta>│</>   ' . $this->escapeLine($bodyLine));
+                }
             }
         }
 
@@ -447,7 +655,11 @@ class MonitorLogsCommand extends Command
         $this->line('  <fg=cyan>┌─ HTTP Call</>');
         if (is_array($request) && isset($request['url'])) {
             $method = $request['method'] ?? 'GET';
-            $this->line('  <fg=cyan>│</>   ' . $this->escapeLine((string) $method) . ' ' . $this->escapeLine((string) $request['url']));
+            $reqUrl = (string) $request['url'];
+            $this->line('  <fg=cyan>│</>   ' . $this->escapeLine((string) $method) . ' ' . $this->escapeLine($reqUrl));
+            if ($this->isUrl($reqUrl)) {
+                $this->formatUrl($reqUrl, 'cyan');
+            }
         }
         if (is_array($response)) {
             $status = $response['status_code'] ?? $response['status'] ?? null;
