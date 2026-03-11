@@ -37,7 +37,7 @@ final class TraceHelper
                 continue;
             }
 
-            if ($file === 'artisan') {
+            if (basename($file) === 'artisan') {
                 continue;
             }
 

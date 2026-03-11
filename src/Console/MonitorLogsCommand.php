@@ -598,8 +598,9 @@ class MonitorLogsCommand extends Command
         }
         $trace = $context['trace'] ?? null;
         if (is_array($trace) && $trace !== []) {
+            $this->line('  <fg=blue>│</>   <fg=gray>Trace:</>');
             foreach (array_slice($trace, 0, 3) as $frame) {
-                $this->line('  <fg=blue>│</>   ' . $this->escapeLine((string) $frame));
+                $this->line('  <fg=blue>│</>     ' . $this->escapeLine((string) $frame));
             }
         }
         $this->line('  <fg=blue>└─</>');
@@ -637,8 +638,9 @@ class MonitorLogsCommand extends Command
         }
         $trace = $context['trace'] ?? null;
         if (is_array($trace) && $trace !== []) {
+            $this->line('  <fg=#ff9800>│</>   <fg=gray>Trace:</>');
             foreach (array_slice($trace, 0, 3) as $frame) {
-                $this->line('  <fg=#ff9800>│</>   ' . $this->escapeLine((string) $frame));
+                $this->line('  <fg=#ff9800>│</>     ' . $this->escapeLine((string) $frame));
             }
         }
         $this->line('  <fg=#ff9800>└─</>');
