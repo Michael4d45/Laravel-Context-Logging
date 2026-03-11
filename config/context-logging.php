@@ -74,6 +74,11 @@ return [
         'db' => env('CONTEXT_LOG_DB', false),
         'cache' => env('CONTEXT_LOG_CACHE', false),
         'queue' => env('CONTEXT_LOG_QUEUE', false),
+        'mail' => env('CONTEXT_LOG_MAIL', false),
+        'reverb' => env('CONTEXT_LOG_REVERB', false),
+        'schedule' => env('CONTEXT_LOG_SCHEDULE', false),
+        'notifications' => env('CONTEXT_LOG_NOTIFICATIONS', false),
+        'broadcasting' => env('CONTEXT_LOG_BROADCASTING', false),
 
         // Route names or path patterns to exclude from request/response logging (e.g. 'health', 'horizon.*', 'livewire/*').
         'ignore_routes' => array_filter(explode(',', env('CONTEXT_LOG_IGNORE_ROUTES', ''))),

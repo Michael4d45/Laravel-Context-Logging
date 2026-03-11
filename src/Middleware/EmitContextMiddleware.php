@@ -45,7 +45,7 @@ class EmitContextMiddleware
         if (!$ignoreRoute) {
             if ($logUser && $request->user()) {
                 $user = $request->user();
-                $attributes = config('context-logging.log.user_attributes', ['id', 'name', 'email', 'is_admin']);
+                $attributes = config('context-logging.log.user_attributes', ['id', 'name', 'email']);
                 $payload = [];
                 foreach ($attributes as $key) {
                     $payload[$key] = $key === 'id' ? $user->getKey() : ($user->{$key} ?? null);

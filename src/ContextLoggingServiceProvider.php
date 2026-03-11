@@ -95,6 +95,11 @@ class ContextLoggingServiceProvider extends ServiceProvider
         $this->bootDatabaseLogging();
         $this->bootCacheLogging();
         $this->bootQueueLogging();
+        $this->bootMailLogging();
+        $this->bootReverbLogging();
+        $this->bootScheduleLogging();
+        $this->bootNotificationsLogging();
+        $this->bootBroadcastingLogging();
 
         // Note: Middleware registration is intentionally NOT automatic.
         // Users must manually register RequestContextMiddleware and EmitContextMiddleware
@@ -225,6 +230,301 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 'queue' => $event->queue,
                 'size' => $event->size,
             ]);
+        });
+    }
+
+    protected function bootMailLogging(): void
+    {
+        if (!config('context-logging.log.mail', false)) {
+            return;
+        }
+
+        $messageSending = \Illuminate\Mail\Events\MessageSending::class;
+        $messageSent = \Illuminate\Mail\Events\MessageSent::class;
+        if (!class_exists($messageSending) || !class_exists($messageSent)) {
+            return;
+        }
+
+        $store = fn () => $this->app->make(ContextStore::class);
+        $trace = fn () => TraceHelper::getCollapsedTrace();
+
+        Event::listen($messageSending, function ($event) use ($store, $trace): void {
+            $message = $event->message ?? $event->data['message'] ?? null;
+            $store()->addEvent('debug', 'mail', [
+                'event' => 'MessageSending',
+                'to' => $message ? $this->mailRecipients($message) : null,
+                'subject' => $message?->getSubject(),
+                'trace' => $trace(),
+            ]);
+        });
+
+        Event::listen($messageSent, function ($event) use ($store, $trace): void {
+            $message = $event->message ?? $event->data['message'] ?? null;
+            $store()->addEvent('debug', 'mail', [
+                'event' => 'MessageSent',
+                'to' => $message ? $this->mailRecipients($message) : null,
+                'subject' => $message?->getSubject(),
+                'trace' => $trace(),
+            ]);
+        });
+    }
+
+    /**
+     * @param \Symfony\Component\Mime\Email $message
+     * @return array<string>|null
+     */
+    private function mailRecipients($message): ?array
+    {
+        if (!method_exists($message, 'getTo')) {
+            return null;
+        }
+        $to = $message->getTo();
+        $addresses = [];
+        foreach ($to as $addr) {
+            $addresses[] = $addr->getAddress();
+        }
+        return $addresses ?: null;
+    }
+
+    protected function bootReverbLogging(): void
+    {
+        if (!config('context-logging.log.reverb', false)) {
+            return;
+        }
+
+        $clientConnected = 'Laravel\Reverb\Events\ClientConnected';
+        $clientDisconnected = 'Laravel\Reverb\Events\ClientDisconnected';
+        $pusherSubscribe = 'Laravel\Reverb\Events\PusherSubscribe';
+        $pusherUnsubscribe = 'Laravel\Reverb\Events\PusherUnsubscribe';
+
+        if (!class_exists($clientConnected)) {
+            return;
+        }
+
+        $store = fn () => $this->app->make(ContextStore::class);
+        $trace = fn () => TraceHelper::getCollapsedTrace();
+
+        $connectionId = function ($event): ?string {
+            if (isset($event->connectionId)) {
+                return $event->connectionId;
+            }
+            if (isset($event->connection) && is_object($event->connection) && method_exists($event->connection, 'id')) {
+                return $event->connection->id();
+            }
+            return null;
+        };
+
+        Event::listen($clientConnected, function ($event) use ($store, $trace, $connectionId): void {
+            $store()->addEvent('debug', 'reverb', [
+                'event' => 'ClientConnected',
+                'connection_id' => $connectionId($event),
+                'trace' => $trace(),
+            ]);
+        });
+
+        if (class_exists($clientDisconnected)) {
+            Event::listen($clientDisconnected, function ($event) use ($store, $trace, $connectionId): void {
+                $store()->addEvent('debug', 'reverb', [
+                    'event' => 'ClientDisconnected',
+                    'connection_id' => $connectionId($event),
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+
+        if (class_exists($pusherSubscribe)) {
+            Event::listen($pusherSubscribe, function ($event) use ($store, $trace, $connectionId): void {
+                $store()->addEvent('debug', 'reverb', [
+                    'event' => 'PusherSubscribe',
+                    'channel' => $event->channel ?? null,
+                    'connection_id' => $connectionId($event),
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+
+        if (class_exists($pusherUnsubscribe)) {
+            Event::listen($pusherUnsubscribe, function ($event) use ($store, $trace, $connectionId): void {
+                $store()->addEvent('debug', 'reverb', [
+                    'event' => 'PusherUnsubscribe',
+                    'channel' => $event->channel ?? null,
+                    'connection_id' => $connectionId($event),
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+    }
+
+    protected function bootScheduleLogging(): void
+    {
+        if (!config('context-logging.log.schedule', false)) {
+            return;
+        }
+
+        $taskStarting = \Illuminate\Console\Events\ScheduledTaskStarting::class;
+        $taskFinished = \Illuminate\Console\Events\ScheduledTaskFinished::class;
+        $taskFailed = \Illuminate\Console\Events\ScheduledTaskFailed::class;
+        $taskSkipped = \Illuminate\Console\Events\ScheduledTaskSkipped::class;
+
+        if (!class_exists($taskStarting)) {
+            return;
+        }
+
+        $store = fn () => $this->app->make(ContextStore::class);
+        $trace = fn () => TraceHelper::getCollapsedTrace();
+
+        Event::listen($taskStarting, function ($event) use ($store, $trace): void {
+            $store()->addEvent('debug', 'schedule', [
+                'event' => 'ScheduledTaskStarting',
+                'task' => $event->task->getSummaryForDisplay(),
+                'trace' => $trace(),
+            ]);
+        });
+
+        if (class_exists($taskFinished)) {
+            Event::listen($taskFinished, function ($event) use ($store, $trace): void {
+                $store()->addEvent('debug', 'schedule', [
+                    'event' => 'ScheduledTaskFinished',
+                    'task' => $event->task->getSummaryForDisplay(),
+                    'runtime' => $event->runtime ?? null,
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+
+        if (class_exists($taskFailed)) {
+            Event::listen($taskFailed, function ($event) use ($store): void {
+                $store()->addEvent('error', 'schedule', [
+                    'event' => 'ScheduledTaskFailed',
+                    'task' => $event->task->getSummaryForDisplay(),
+                    'exception' => $event->exception->getMessage(),
+                    'trace' => TraceHelper::getCollapsedTrace(),
+                ]);
+            });
+        }
+
+        if (class_exists($taskSkipped)) {
+            Event::listen($taskSkipped, function ($event) use ($store, $trace): void {
+                $store()->addEvent('debug', 'schedule', [
+                    'event' => 'ScheduledTaskSkipped',
+                    'task' => $event->task->getSummaryForDisplay(),
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+    }
+
+    protected function bootNotificationsLogging(): void
+    {
+        if (!config('context-logging.log.notifications', false)) {
+            return;
+        }
+
+        $notificationSending = \Illuminate\Notifications\Events\NotificationSending::class;
+        $notificationSent = \Illuminate\Notifications\Events\NotificationSent::class;
+        $notificationFailed = \Illuminate\Notifications\Events\NotificationFailed::class;
+
+        if (!class_exists($notificationSending) || !class_exists($notificationSent)) {
+            return;
+        }
+
+        $store = fn () => $this->app->make(ContextStore::class);
+        $trace = fn () => TraceHelper::getCollapsedTrace();
+        $describeNotifiable = function ($notifiable): ?string {
+            if ($notifiable === null) {
+                return null;
+            }
+            if (is_object($notifiable) && method_exists($notifiable, 'getKey')) {
+                return get_class($notifiable) . '#' . $notifiable->getKey();
+            }
+            return is_object($notifiable) ? get_class($notifiable) : (string) $notifiable;
+        };
+
+        Event::listen($notificationSending, function ($event) use ($store, $trace, $describeNotifiable): void {
+            $store()->addEvent('debug', 'notifications', [
+                'event' => 'NotificationSending',
+                'channel' => $event->channel ?? null,
+                'notification' => is_object($event->notification) ? get_class($event->notification) : null,
+                'notifiable' => $describeNotifiable($event->notifiable ?? null),
+                'trace' => $trace(),
+            ]);
+        });
+
+        Event::listen($notificationSent, function ($event) use ($store, $trace, $describeNotifiable): void {
+            $store()->addEvent('debug', 'notifications', [
+                'event' => 'NotificationSent',
+                'channel' => $event->channel ?? null,
+                'notification' => is_object($event->notification) ? get_class($event->notification) : null,
+                'notifiable' => $describeNotifiable($event->notifiable ?? null),
+                'trace' => $trace(),
+            ]);
+        });
+
+        if (class_exists($notificationFailed)) {
+            Event::listen($notificationFailed, function ($event) use ($store, $describeNotifiable): void {
+                $store()->addEvent('error', 'notifications', [
+                    'event' => 'NotificationFailed',
+                    'channel' => $event->channel ?? null,
+                    'notification' => is_object($event->notification) ? get_class($event->notification) : null,
+                    'notifiable' => $describeNotifiable($event->notifiable ?? null),
+                    'exception' => $event->exception instanceof \Throwable ? $event->exception->getMessage() : null,
+                    'trace' => TraceHelper::getCollapsedTrace(),
+                ]);
+            });
+        }
+    }
+
+    protected function bootBroadcastingLogging(): void
+    {
+        if (!config('context-logging.log.broadcasting', false)) {
+            return;
+        }
+
+        if (!class_exists(\Illuminate\Broadcasting\BroadcastEvent::class)) {
+            return;
+        }
+
+        $store = fn () => $this->app->make(ContextStore::class);
+        $trace = fn () => TraceHelper::getCollapsedTrace();
+
+        $logBroadcastJob = function (string $eventName, $event) use ($store, $trace): void {
+            $job = $event->job ?? null;
+            if ($job === null || !$job instanceof \Illuminate\Broadcasting\BroadcastEvent) {
+                return;
+            }
+            $eventClass = $job->displayName();
+            $channels = null;
+            $broadcastEvent = null;
+            if (property_exists($job, 'event')) {
+                try {
+                    $ref = new \ReflectionProperty($job, 'event');
+                    $broadcastEvent = $ref->getValue($job);
+                } catch (\Throwable) {
+                    // ignore
+                }
+            }
+            if (is_object($broadcastEvent) && method_exists($broadcastEvent, 'broadcastOn')) {
+                $channels = [];
+                foreach ($broadcastEvent->broadcastOn() as $channel) {
+                    $channels[] = $channel instanceof \Illuminate\Broadcasting\Channel
+                        ? ($channel->name ?? (string) $channel)
+                        : (string) $channel;
+                }
+            }
+            $store()->addEvent('debug', 'broadcasting', array_filter([
+                'event' => $eventName,
+                'broadcast_event' => $eventClass,
+                'channels' => $channels,
+                'trace' => $trace(),
+            ]));
+        };
+
+        Event::listen(\Illuminate\Queue\Events\JobProcessing::class, function ($event) use ($logBroadcastJob): void {
+            $logBroadcastJob('BroadcastProcessing', $event);
+        });
+
+        Event::listen(\Illuminate\Queue\Events\JobProcessed::class, function ($event) use ($logBroadcastJob): void {
+            $logBroadcastJob('BroadcastProcessed', $event);
         });
     }
 
