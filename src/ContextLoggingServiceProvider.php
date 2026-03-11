@@ -314,8 +314,18 @@ class ContextLoggingServiceProvider extends ServiceProvider
             return null;
         };
 
-        Event::listen($clientConnected, function ($event) use ($store, $trace, $connectionId): void {
-            $store()->addEvent('debug', 'reverb', [
+        // Reverb runs in a long-lived process (reverb:start, skipped from console context). Emit after each
+        // event so Reverb activity is written to the log.
+        $emitReverbEvent = function (string $eventName, array $eventPayload) use ($store, $trace): void {
+            $contextStore = $store();
+            $contextStore->initialize();
+            $contextStore->addContexts(['source' => 'reverb', 'timestamp' => now()->toISOString()]);
+            $contextStore->addEvent('debug', 'reverb', $eventPayload);
+            ContextLogEmitter::emit($contextStore, null, 'Reverb event');
+        };
+
+        Event::listen($clientConnected, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
+            $emitReverbEvent('ClientConnected', [
                 'event' => 'ClientConnected',
                 'connection_id' => $connectionId($event),
                 'trace' => $trace(),
@@ -323,8 +333,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
         });
 
         if (class_exists($clientDisconnected)) {
-            Event::listen($clientDisconnected, function ($event) use ($store, $trace, $connectionId): void {
-                $store()->addEvent('debug', 'reverb', [
+            Event::listen($clientDisconnected, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
+                $emitReverbEvent('ClientDisconnected', [
                     'event' => 'ClientDisconnected',
                     'connection_id' => $connectionId($event),
                     'trace' => $trace(),
@@ -333,8 +343,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
         }
 
         if (class_exists($pusherSubscribe)) {
-            Event::listen($pusherSubscribe, function ($event) use ($store, $trace, $connectionId): void {
-                $store()->addEvent('debug', 'reverb', [
+            Event::listen($pusherSubscribe, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
+                $emitReverbEvent('PusherSubscribe', [
                     'event' => 'PusherSubscribe',
                     'channel' => $event->channel ?? null,
                     'connection_id' => $connectionId($event),
@@ -344,8 +354,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
         }
 
         if (class_exists($pusherUnsubscribe)) {
-            Event::listen($pusherUnsubscribe, function ($event) use ($store, $trace, $connectionId): void {
-                $store()->addEvent('debug', 'reverb', [
+            Event::listen($pusherUnsubscribe, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
+                $emitReverbEvent('PusherUnsubscribe', [
                     'event' => 'PusherUnsubscribe',
                     'channel' => $event->channel ?? null,
                     'connection_id' => $connectionId($event),
@@ -488,24 +498,35 @@ class ContextLoggingServiceProvider extends ServiceProvider
         $trace = fn () => TraceHelper::getCollapsedTrace();
 
         $logBroadcastJob = function (string $eventName, $event) use ($store, $trace): void {
-            $job = $event->job ?? null;
-            if ($job === null || !$job instanceof \Illuminate\Broadcasting\BroadcastEvent) {
+            $queueJob = $event->job ?? null;
+            if ($queueJob === null) {
                 return;
             }
-            $eventClass = $job->displayName();
+            // JobProcessing/JobProcessed pass the queue driver's Job (e.g. RedisJob). For object jobs the
+            // payload['job'] is always CallQueuedHandler@call; the real command is in payload['data']['commandName'].
+            $commandClass = method_exists($queueJob, 'resolveQueuedJobClass') ? $queueJob->resolveQueuedJobClass() : null;
+            if ($commandClass !== \Illuminate\Broadcasting\BroadcastEvent::class) {
+                return;
+            }
+            $eventClass = method_exists($queueJob, 'resolveName') ? $queueJob->resolveName() : $commandClass;
             $channels = null;
+            // After the job runs, the queue Job's resolved command is in protected $instance (BroadcastEvent).
             $broadcastEvent = null;
-            if (property_exists($job, 'event')) {
+            if (property_exists($queueJob, 'instance')) {
                 try {
-                    $ref = new \ReflectionProperty($job, 'event');
-                    $broadcastEvent = $ref->getValue($job);
+                    $ref = new \ReflectionProperty($queueJob, 'instance');
+                    $ref->setAccessible(true);
+                    $broadcastEvent = $ref->getValue($queueJob);
                 } catch (\Throwable) {
                     // ignore
                 }
             }
-            if (is_object($broadcastEvent) && method_exists($broadcastEvent, 'broadcastOn')) {
+            $innerEvent = ($broadcastEvent instanceof \Illuminate\Broadcasting\BroadcastEvent && isset($broadcastEvent->event))
+                ? $broadcastEvent->event
+                : null;
+            if (is_object($innerEvent) && method_exists($innerEvent, 'broadcastOn')) {
                 $channels = [];
-                foreach ($broadcastEvent->broadcastOn() as $channel) {
+                foreach ($innerEvent->broadcastOn() as $channel) {
                     $channels[] = $channel instanceof \Illuminate\Broadcasting\Channel
                         ? ($channel->name ?? (string) $channel)
                         : (string) $channel;
@@ -518,6 +539,32 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 'trace' => $trace(),
             ]));
         };
+
+        Event::listen(JobQueued::class, function (JobQueued $event) use ($store, $trace): void {
+            $job = $event->job;
+            if (!$job instanceof \Illuminate\Broadcasting\BroadcastEvent) {
+                return;
+            }
+            $eventClass = isset($job->event) && is_object($job->event) ? $job->event::class : $job::class;
+            $channels = null;
+            $innerEvent = $job->event ?? null;
+            if (is_object($innerEvent) && method_exists($innerEvent, 'broadcastOn')) {
+                $channels = [];
+                foreach ($innerEvent->broadcastOn() as $channel) {
+                    $channels[] = $channel instanceof \Illuminate\Broadcasting\Channel
+                        ? ($channel->name ?? (string) $channel)
+                        : (string) $channel;
+                }
+            }
+            $store()->addEvent('debug', 'broadcasting', array_filter([
+                'event' => 'BroadcastQueued',
+                'broadcast_event' => $eventClass,
+                'channels' => $channels,
+                'connection' => $event->connectionName,
+                'queue' => $event->queue,
+                'trace' => $trace(),
+            ]));
+        });
 
         Event::listen(\Illuminate\Queue\Events\JobProcessing::class, function ($event) use ($logBroadcastJob): void {
             $logBroadcastJob('BroadcastProcessing', $event);
