@@ -231,24 +231,52 @@ class ContextLoggingServiceProvider extends ServiceProvider
     /**
      * Bootstrap context logging for console (artisan commands).
      * Initializes context without request info and emits on command finish.
+     * Commands in config context-logging.console.skip_commands are not wrapped
+     * (e.g. queue:work so each job logs separately).
      */
     protected function bootConsoleContext(): void
     {
         $this->app->booted(function () {
             $contextStore = $this->app->make(ContextStore::class);
+            $skipEmit = [false];
 
-            $this->app['events']->listen(CommandStarting::class, function (CommandStarting $event) use ($contextStore) {
+            $this->app['events']->listen(CommandStarting::class, function (CommandStarting $event) use ($contextStore, &$skipEmit) {
+                $command = $event->command ?? 'unknown';
+                if ($this->shouldSkipConsoleCommand($command)) {
+                    $skipEmit[0] = true;
+                    return;
+                }
+                $skipEmit[0] = false;
                 $contextStore->initialize();
                 $contextStore->addContexts([
                     'run_id' => (string) Str::uuid(),
                     'timestamp' => now()->toISOString(),
-                    'command' => $event->command ?? 'unknown',
+                    'command' => $command,
+                    'args' => $event->input->getArguments(),
                 ]);
             });
 
-            $this->app->terminating(function () use ($contextStore) {
+            $this->app->terminating(function () use ($contextStore, &$skipEmit) {
+                if ($skipEmit[0]) {
+                    return;
+                }
                 ContextLogEmitter::emit($contextStore, null, 'Console run completed');
             });
         });
+    }
+
+    /**
+     * Whether the given artisan command should skip console context wrapping.
+     */
+    protected function shouldSkipConsoleCommand(string $command): bool
+    {
+        $patterns = config('context-logging.console.skip_commands', []);
+        foreach ($patterns as $pattern) {
+            $pattern = trim((string) $pattern);
+            if ($pattern !== '' && Str::is($pattern, $command)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

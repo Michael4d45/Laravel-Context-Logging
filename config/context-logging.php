@@ -79,4 +79,23 @@ return [
         'ignore_routes' => array_filter(explode(',', env('CONTEXT_LOG_IGNORE_ROUTES', ''))),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Console Command Context
+    |--------------------------------------------------------------------------
+    |
+    | Commands listed here do not get wrapped in a single "Console run completed"
+    | context log. Use for long-running workers (e.g. queue:work, horizon) so
+    | each job/unit of work is logged separately instead of one giant entry.
+    | Supports Laravel wildcards (e.g. 'queue:*', 'horizon').
+    |
+    */
+
+    'console' => [
+        'skip_commands' => array_filter(array_merge(
+            ['queue:work', 'queue:listen'],
+            explode(',', env('CONTEXT_LOG_SKIP_COMMANDS', '')),
+        )),
+    ],
+
 ];

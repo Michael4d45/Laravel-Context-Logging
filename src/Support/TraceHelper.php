@@ -18,7 +18,6 @@ final class TraceHelper
         $vendorPath = $basePath !== '' ? $basePath . '/vendor' : '';
 
         $lines = [];
-        $inVendorBlock = false;
 
         foreach ($trace as $frame) {
             $file = isset($frame['file']) ? str_replace('\\', '/', $frame['file']) : null;
@@ -35,11 +34,12 @@ final class TraceHelper
             }
 
             if ($vendorPath !== '' && str_starts_with($file, $vendorPath)) {
-                $inVendorBlock = true;
                 continue;
             }
 
-            $inVendorBlock = false;
+            if ($file === 'artisan') {
+                continue;
+            }
 
             if (str_contains($file, 'public/index.php')) {
                 continue;
