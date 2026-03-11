@@ -13,7 +13,7 @@ return [
 
     'http' => [
         // Disable this to turn off outbound HTTP auto-capture and sub-context APIs.
-        'enabled' => env('CONTEXT_LOG_HTTP_ENABLED', true),
+        'enabled' => env('CONTEXT_LOG_HTTP_ENABLED', false),
 
         // Capture options for global outbound HTTP instrumentation.
         'capture_headers' => env('CONTEXT_LOG_HTTP_CAPTURE_HEADERS', false),

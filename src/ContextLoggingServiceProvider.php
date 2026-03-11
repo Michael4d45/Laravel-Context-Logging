@@ -169,7 +169,17 @@ class ContextLoggingServiceProvider extends ServiceProvider
         });
 
         Event::listen(JobProcessing::class, function (JobProcessing $event) use ($store, $trace): void {
-            $store()->addEvent('debug', 'queue', [
+            $contextStore = $store();
+            $contextStore->initialize();
+            $jobId = method_exists($event->job, 'getJobId') ? $event->job->getJobId() : null;
+            $contextStore->addContexts([
+                'job_id' => $jobId,
+                'job' => $event->job->getName(),
+                'queue' => $event->job->getQueue(),
+                'connection' => $event->connectionName,
+                'timestamp' => now()->toISOString(),
+            ]);
+            $contextStore->addEvent('debug', 'queue', [
                 'event' => 'JobProcessing',
                 'job' => $event->job->getName(),
                 'queue' => $event->job->getQueue(),
@@ -180,7 +190,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
         });
 
         Event::listen(JobProcessed::class, function (JobProcessed $event) use ($store, $trace): void {
-            $store()->addEvent('debug', 'queue', [
+            $contextStore = $store();
+            $contextStore->addEvent('debug', 'queue', [
                 'event' => 'JobProcessed',
                 'job' => $event->job->getName(),
                 'queue' => $event->job->getQueue(),
@@ -188,10 +199,13 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 'connection' => $event->connectionName,
                 'trace' => $trace(),
             ]);
+            ContextLogEmitter::emit($contextStore, null, 'Job completed');
+            $contextStore->initialize();
         });
 
         Event::listen(JobFailed::class, function (JobFailed $event) use ($store, $trace): void {
-            $store()->addEvent('error', 'queue', [
+            $contextStore = $store();
+            $contextStore->addEvent('error', 'queue', [
                 'event' => 'JobFailed',
                 'job' => $event->job->getName(),
                 'queue' => $event->job->getQueue(),
@@ -200,6 +214,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 'exception' => $event->exception->getMessage(),
                 'trace' => $trace(),
             ]);
+            ContextLogEmitter::emit($contextStore, null, 'Job failed');
+            $contextStore->initialize();
         });
 
         Event::listen(QueueBusy::class, function (QueueBusy $event) use ($store): void {
