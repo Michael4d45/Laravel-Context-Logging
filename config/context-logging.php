@@ -8,13 +8,6 @@ return [
     |--------------------------------------------------------------------------
     |
     | Configuration options for the contextual logging package.
-    | Currently, this package operates with sensible defaults.
-    |
-    | Future options may include:
-    | - Request field filtering
-    | - Log level filtering
-    | - Sampling rates
-    | - Custom context enrichment
     |
     */
 
@@ -26,7 +19,7 @@ return [
         'capture_headers' => env('CONTEXT_LOG_HTTP_CAPTURE_HEADERS', false),
         'capture_body' => env('CONTEXT_LOG_HTTP_CAPTURE_BODY', false),
 
-        // Header names to redact in custom hooks.
+        // Header names to redact in custom hooks and request/response logging.
         'redact_headers' => [
             'authorization',
             'cookie',
@@ -37,7 +30,7 @@ return [
         // Redaction token used for masked headers/body fields.
         'redact_value' => '[redacted]',
 
-        // JSON body keys to redact recursively when capture_body is enabled.
+        // JSON body keys to redact recursively when capture_body or request/response logging is enabled.
         'redact_body_fields' => [
             'password',
             'token',
@@ -57,6 +50,33 @@ return [
             'signature',
         ],
 
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Incoming Request / Response Logging
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, request and response details are added as events to the
+    | context log (only for web requests; ignored in console). Response and
+    | user logging run in terminating middleware.
+    |
+    */
+
+    'log' => [
+        'request' => env('CONTEXT_LOG_REQUEST', false),
+        'response' => env('CONTEXT_LOG_RESPONSE', false),
+        'user' => env('CONTEXT_LOG_USER', false),
+
+        // User model attributes to include in the User log event when log.user is true. Use 'id' for the model key (getKey()).
+        'user_attributes' => ['id', 'name', 'email'],
+
+        'db' => env('CONTEXT_LOG_DB', false),
+        'cache' => env('CONTEXT_LOG_CACHE', false),
+        'queue' => env('CONTEXT_LOG_QUEUE', false),
+
+        // Route names or path patterns to exclude from request/response logging (e.g. 'health', 'horizon.*', 'livewire/*').
+        'ignore_routes' => array_filter(explode(',', env('CONTEXT_LOG_IGNORE_ROUTES', ''))),
     ],
 
 ];

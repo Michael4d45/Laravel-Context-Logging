@@ -16,8 +16,12 @@
         "illuminate/http": "^12.0"
     },
     "require-dev": {
+        "doctrine/sql-formatter": "^1.0",
         "phpunit/phpunit": "^12.5",
         "orchestra/testbench": "^10.0"
+    },
+    "suggest": {
+        "doctrine/sql-formatter": "Optional; enables SQL syntax highlighting when running log:monitor"
     },
     "autoload": {
         "psr-4": {
