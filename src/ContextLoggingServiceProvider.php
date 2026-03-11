@@ -327,7 +327,6 @@ class ContextLoggingServiceProvider extends ServiceProvider
                     $emitReverbEvent([
                         'event' => 'ClientConnected',
                         'connection_id' => method_exists($event->connection, 'id') ? $event->connection->id() : null,
-                        'trace' => $trace(),
                     ]);
                 }
             });
@@ -336,16 +335,28 @@ class ContextLoggingServiceProvider extends ServiceProvider
         if (class_exists($messageReceived)) {
             Event::listen($messageReceived, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
                 $payload = json_decode($event->message, true);
-                if (!is_array($payload) || ($payload['event'] ?? '') !== 'pusher:subscribe') {
+                if (!is_array($payload)) {
                     return;
                 }
+                $pusherEvent = $payload['event'] ?? '';
                 $channel = $payload['data']['channel'] ?? $payload['channel'] ?? null;
-                $emitReverbEvent([
-                    'event' => 'PusherSubscribe',
-                    'channel' => $channel,
-                    'connection_id' => method_exists($event->connection, 'id') ? $event->connection->id() : null,
-                    'trace' => $trace(),
-                ]);
+                $connectionIdVal = method_exists($event->connection, 'id') ? $event->connection->id() : null;
+
+                if ($pusherEvent === 'pusher:subscribe') {
+                    $emitReverbEvent([
+                        'event' => 'PusherSubscribe',
+                        'channel' => $channel,
+                        'connection_id' => $connectionIdVal,
+                    ]);
+                    return;
+                }
+                if ($pusherEvent === 'pusher:unsubscribe') {
+                    $emitReverbEvent([
+                        'event' => 'PusherUnsubscribe',
+                        'channel' => $channel,
+                        'connection_id' => $connectionIdVal,
+                    ]);
+                }
             });
         }
 
