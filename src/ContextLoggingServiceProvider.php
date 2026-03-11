@@ -3,7 +3,9 @@
 namespace Michael4d45\ContextLogging;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Console\Events\CommandStarting;
 
 /**
  * Context Logging Service Provider.
@@ -68,8 +70,36 @@ class ContextLoggingServiceProvider extends ServiceProvider
             $this->app->make(HttpClientInstrumentation::class)->register();
         });
 
+        if ($this->app->runningInConsole()) {
+            $this->bootConsoleContext();
+        }
+
         // Note: Middleware registration is intentionally NOT automatic.
         // Users must manually register RequestContextMiddleware and EmitContextMiddleware
         // in their bootstrap/app.php file to have explicit control over middleware ordering.
+    }
+
+    /**
+     * Bootstrap context logging for console (artisan commands).
+     * Initializes context without request info and emits on command finish.
+     */
+    protected function bootConsoleContext(): void
+    {
+        $this->app->booted(function () {
+            $contextStore = $this->app->make(ContextStore::class);
+
+            $this->app['events']->listen(CommandStarting::class, function (CommandStarting $event) use ($contextStore) {
+                $contextStore->initialize();
+                $contextStore->addContexts([
+                    'run_id' => (string) Str::uuid(),
+                    'timestamp' => now()->toISOString(),
+                    'command' => $event->command ?? 'unknown',
+                ]);
+            });
+
+            $this->app->terminating(function () use ($contextStore) {
+                ContextLogEmitter::emit($contextStore, null, 'Console run completed');
+            });
+        });
     }
 }
