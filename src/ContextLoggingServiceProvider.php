@@ -292,15 +292,6 @@ class ContextLoggingServiceProvider extends ServiceProvider
             return;
         }
 
-        $clientConnected = 'Laravel\Reverb\Events\ClientConnected';
-        $clientDisconnected = 'Laravel\Reverb\Events\ClientDisconnected';
-        $pusherSubscribe = 'Laravel\Reverb\Events\PusherSubscribe';
-        $pusherUnsubscribe = 'Laravel\Reverb\Events\PusherUnsubscribe';
-
-        if (!class_exists($clientConnected)) {
-            return;
-        }
-
         $store = fn () => $this->app->make(ContextStore::class);
         $trace = fn () => TraceHelper::getCollapsedTrace();
 
@@ -316,7 +307,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         // Reverb runs in a long-lived process (reverb:start, skipped from console context). Emit after each
         // event so Reverb activity is written to the log.
-        $emitReverbEvent = function (string $eventName, array $eventPayload) use ($store, $trace): void {
+        $emitReverbEvent = function (array $eventPayload) use ($store): void {
             $contextStore = $store();
             $contextStore->initialize();
             $contextStore->addContexts(['source' => 'reverb', 'timestamp' => now()->toISOString()]);
@@ -324,17 +315,72 @@ class ContextLoggingServiceProvider extends ServiceProvider
             ContextLogEmitter::emit($contextStore, null, 'Reverb event');
         };
 
-        Event::listen($clientConnected, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
-            $emitReverbEvent('ClientConnected', [
-                'event' => 'ClientConnected',
-                'connection_id' => $connectionId($event),
-                'trace' => $trace(),
-            ]);
-        });
+        // Laravel Reverb 1.x does not dispatch ClientConnected/PusherSubscribe; it dispatches MessageSent,
+        // MessageReceived, ChannelCreated. Use those to log connection and subscription activity.
+        $messageSent = 'Laravel\Reverb\Events\MessageSent';
+        $messageReceived = 'Laravel\Reverb\Events\MessageReceived';
+        $channelCreated = 'Laravel\Reverb\Events\ChannelCreated';
+
+        if (class_exists($messageSent)) {
+            Event::listen($messageSent, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
+                if (str_contains($event->message, 'pusher:connection_established')) {
+                    $emitReverbEvent([
+                        'event' => 'ClientConnected',
+                        'connection_id' => method_exists($event->connection, 'id') ? $event->connection->id() : null,
+                        'trace' => $trace(),
+                    ]);
+                }
+            });
+        }
+
+        if (class_exists($messageReceived)) {
+            Event::listen($messageReceived, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
+                $payload = json_decode($event->message, true);
+                if (!is_array($payload) || ($payload['event'] ?? '') !== 'pusher:subscribe') {
+                    return;
+                }
+                $channel = $payload['data']['channel'] ?? $payload['channel'] ?? null;
+                $emitReverbEvent([
+                    'event' => 'PusherSubscribe',
+                    'channel' => $channel,
+                    'connection_id' => method_exists($event->connection, 'id') ? $event->connection->id() : null,
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+
+        if (class_exists($channelCreated)) {
+            Event::listen($channelCreated, function ($event) use ($emitReverbEvent, $trace): void {
+                $channelName = isset($event->channel) && method_exists($event->channel, 'name')
+                    ? $event->channel->name()
+                    : null;
+                $emitReverbEvent([
+                    'event' => 'ChannelCreated',
+                    'channel' => $channelName,
+                    'trace' => $trace(),
+                ]);
+            });
+        }
+
+        // Optional: if a Reverb version dispatches these events (e.g. future or fork), log them too.
+        $clientConnected = 'Laravel\Reverb\Events\ClientConnected';
+        $clientDisconnected = 'Laravel\Reverb\Events\ClientDisconnected';
+        $pusherSubscribe = 'Laravel\Reverb\Events\PusherSubscribe';
+        $pusherUnsubscribe = 'Laravel\Reverb\Events\PusherUnsubscribe';
+
+        if (class_exists($clientConnected)) {
+            Event::listen($clientConnected, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
+                $emitReverbEvent([
+                    'event' => 'ClientConnected',
+                    'connection_id' => $connectionId($event),
+                    'trace' => $trace(),
+                ]);
+            });
+        }
 
         if (class_exists($clientDisconnected)) {
-            Event::listen($clientDisconnected, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
-                $emitReverbEvent('ClientDisconnected', [
+            Event::listen($clientDisconnected, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
+                $emitReverbEvent([
                     'event' => 'ClientDisconnected',
                     'connection_id' => $connectionId($event),
                     'trace' => $trace(),
@@ -343,8 +389,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
         }
 
         if (class_exists($pusherSubscribe)) {
-            Event::listen($pusherSubscribe, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
-                $emitReverbEvent('PusherSubscribe', [
+            Event::listen($pusherSubscribe, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
+                $emitReverbEvent([
                     'event' => 'PusherSubscribe',
                     'channel' => $event->channel ?? null,
                     'connection_id' => $connectionId($event),
@@ -354,8 +400,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
         }
 
         if (class_exists($pusherUnsubscribe)) {
-            Event::listen($pusherUnsubscribe, function ($event) use ($store, $trace, $connectionId, $emitReverbEvent): void {
-                $emitReverbEvent('PusherUnsubscribe', [
+            Event::listen($pusherUnsubscribe, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
+                $emitReverbEvent([
                     'event' => 'PusherUnsubscribe',
                     'channel' => $event->channel ?? null,
                     'connection_id' => $connectionId($event),
