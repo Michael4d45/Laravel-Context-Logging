@@ -640,6 +640,10 @@ class ContextLoggingServiceProvider extends ServiceProvider
      */
     protected function bootConsoleContext(): void
     {
+        if (!config('context-logging.log.console', false)) {
+            return;
+        }
+
         $this->app->booted(function () {
             $contextStore = $this->app->make(ContextStore::class);
             $skipEmit = [false];

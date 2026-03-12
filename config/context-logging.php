@@ -64,6 +64,7 @@ return [
     */
 
     'log' => [
+        'console' => env('CONTEXT_LOG_CONSOLE', false),
         'request' => env('CONTEXT_LOG_REQUEST', false),
         'response' => env('CONTEXT_LOG_RESPONSE', false),
         'user' => env('CONTEXT_LOG_USER', false),
