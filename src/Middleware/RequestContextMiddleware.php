@@ -26,8 +26,8 @@ class RequestContextMiddleware
      */
     public function handle(Request $request, Closure $next)
     {
-        // Initialize the context store for this request
-        $this->contextStore->initialize();
+        // Promote any bootstrap-time events into the request lifecycle.
+        $this->contextStore->initialize(true);
 
         // Generate a unique request ID if not already present
         $requestId = $request->header('X-Request-ID') ?: (string) Str::uuid();

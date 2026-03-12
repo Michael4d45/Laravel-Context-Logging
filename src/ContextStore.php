@@ -23,6 +23,11 @@ class ContextStore
     protected array $events = [];
 
     /**
+     * Events captured before a lifecycle context is initialized.
+     */
+    protected array $bufferedEvents = [];
+
+    /**
      * Start timestamp for duration calculation.
      */
     protected ?float $startTime = null;
@@ -39,6 +44,11 @@ class ContextStore
      */
     protected bool $httpEnabled = true;
 
+    /**
+     * Whether a request/job/command lifecycle is currently active.
+     */
+    protected bool $lifecycleStarted = false;
+
     public function __construct(
         protected ?HttpContextHookRunner $httpHookRunner = null,
         ?bool $httpEnabled = null,
@@ -51,12 +61,16 @@ class ContextStore
     /**
      * Initialize the context store for a new request.
      */
-    public function initialize(): void
+    public function initialize(bool $promoteBufferedEvents = false): void
     {
+        $promotedEvents = $promoteBufferedEvents ? $this->bufferedEvents : [];
+
         $this->context = [];
-        $this->events = [];
+        $this->events = $promotedEvents;
+        $this->bufferedEvents = [];
         $this->httpCalls = [];
         $this->startTime = microtime(true);
+        $this->lifecycleStarted = true;
     }
 
     /**
@@ -96,12 +110,19 @@ class ContextStore
      */
     public function addEvent(string $level, string $message, array $context = []): void
     {
-        $this->events[] = [
+        $event = [
             'level' => $level,
             'message' => $message,
             'context' => $context,
             'timestamp' => microtime(true),
         ];
+
+        if ($this->lifecycleStarted) {
+            $this->events[] = $event;
+            return;
+        }
+
+        $this->bufferedEvents[] = $event;
     }
 
     /**
@@ -113,11 +134,19 @@ class ContextStore
     }
 
     /**
+     * Get events captured before lifecycle initialization.
+     */
+    public function getBufferedEvents(): array
+    {
+        return $this->bufferedEvents;
+    }
+
+    /**
      * Check if the context store has any events.
      */
     public function hasEvents(): bool
     {
-        return !empty($this->events);
+        return !empty($this->events) || !empty($this->bufferedEvents);
     }
 
     /**
@@ -189,8 +218,10 @@ class ContextStore
     {
         $this->context = [];
         $this->events = [];
+        $this->bufferedEvents = [];
         $this->httpCalls = [];
         $this->startTime = null;
+        $this->lifecycleStarted = false;
     }
 
     /**

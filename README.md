@@ -129,6 +129,12 @@ Request termination → single wide event → Laravel logger → output
 
 Log calls become **annotations** that are collected into comprehensive wide events.
 
+### Bootstrap and early log calls
+
+Logs that run **before** the request context is established are buffered and promoted into the next lifecycle that starts. For HTTP, that means any `Log::info()` (or other level) written during bootstrap, such as in `routes/channels.php`, in a service provider, or while `Broadcast::channel()` definitions are loaded, will be included in the eventual request-wide event instead of being discarded when `RequestContextMiddleware` initializes the store.
+
+The same promotion behavior is used when console and queue lifecycles start, while long-lived lifecycle resets clear the store after emit so completed runs and jobs do not leak into the next one.
+
 ## Philosophy: Wide Events Only
 
 This package embraces **Wide Events** exclusively - no more scattered logs! Instead of emitting individual log entries throughout request processing, all logging calls are accumulated and emitted as a single comprehensive event at request completion.

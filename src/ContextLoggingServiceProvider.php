@@ -175,7 +175,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         Event::listen(JobProcessing::class, function (JobProcessing $event) use ($store, $trace): void {
             $contextStore = $store();
-            $contextStore->initialize();
+            $contextStore->initialize(true);
             $jobId = method_exists($event->job, 'getJobId') ? $event->job->getJobId() : null;
             $contextStore->addContexts([
                 'job_id' => $jobId,
@@ -205,7 +205,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 'trace' => $trace(),
             ]);
             ContextLogEmitter::emit($contextStore, null, 'Job completed');
-            $contextStore->initialize();
+            $contextStore->clear();
         });
 
         Event::listen(JobFailed::class, function (JobFailed $event) use ($store, $trace): void {
@@ -220,7 +220,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 'trace' => $trace(),
             ]);
             ContextLogEmitter::emit($contextStore, null, 'Job failed');
-            $contextStore->initialize();
+            $contextStore->clear();
         });
 
         Event::listen(QueueBusy::class, function (QueueBusy $event) use ($store): void {
@@ -652,10 +652,11 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 $command = $event->command ?? 'unknown';
                 if ($this->shouldSkipConsoleCommand($command)) {
                     $skipEmit[0] = true;
+                    $contextStore->clear();
                     return;
                 }
                 $skipEmit[0] = false;
-                $contextStore->initialize();
+                $contextStore->initialize(true);
                 $contextStore->addContexts([
                     'run_id' => (string) Str::uuid(),
                     'timestamp' => now()->toISOString(),
@@ -669,6 +670,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
                     return;
                 }
                 ContextLogEmitter::emit($contextStore, null, 'Console run completed');
+                $contextStore->clear();
             });
         });
     }

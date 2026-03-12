@@ -49,6 +49,40 @@ class ContextStoreTest extends TestCase
     }
 
     #[Test]
+    public function it_buffers_events_before_a_lifecycle_starts()
+    {
+        $this->contextStore->addEvent('info', 'Framework booted');
+
+        $this->assertSame([], $this->contextStore->getEvents());
+        $this->assertCount(1, $this->contextStore->getBufferedEvents());
+        $this->assertTrue($this->contextStore->hasEvents());
+    }
+
+    #[Test]
+    public function it_can_promote_buffered_events_into_a_new_lifecycle()
+    {
+        $this->contextStore->addEvent('info', 'Framework booted');
+
+        $this->contextStore->initialize(true);
+
+        $this->assertCount(1, $this->contextStore->getEvents());
+        $this->assertSame([], $this->contextStore->getBufferedEvents());
+        $this->assertSame('Framework booted', $this->contextStore->getEvents()[0]['message']);
+    }
+
+    #[Test]
+    public function it_discards_buffered_events_when_a_lifecycle_starts_without_promotion()
+    {
+        $this->contextStore->addEvent('info', 'Framework booted');
+
+        $this->contextStore->initialize();
+
+        $this->assertSame([], $this->contextStore->getEvents());
+        $this->assertSame([], $this->contextStore->getBufferedEvents());
+        $this->assertFalse($this->contextStore->hasEvents());
+    }
+
+    #[Test]
     public function it_generates_structured_payload()
     {
         $this->contextStore->initialize();
@@ -95,14 +129,16 @@ class ContextStoreTest extends TestCase
         $this->contextStore->initialize();
         $this->contextStore->addContext('test', 'value');
         $this->contextStore->addEvent('info', 'test message');
+        $this->contextStore->clear();
+        $this->contextStore->addEvent('info', 'buffered message');
 
-        $this->assertNotEmpty($this->contextStore->getAllContext());
-        $this->assertTrue($this->contextStore->hasEvents());
+        $this->assertCount(1, $this->contextStore->getBufferedEvents());
 
         $this->contextStore->clear();
 
         $this->assertEmpty($this->contextStore->getAllContext());
         $this->assertFalse($this->contextStore->hasEvents());
+        $this->assertSame([], $this->contextStore->getBufferedEvents());
     }
 
     #[Test]
