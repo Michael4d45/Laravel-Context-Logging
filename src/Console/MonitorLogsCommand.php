@@ -23,6 +23,8 @@ class MonitorLogsCommand extends Command
 
     protected int $skipThreshold = 50;
 
+    protected int $sqlQueryCount = 0;
+
     public function handle(): int
     {
         $file = $this->argument('file') ?? storage_path('logs/laravel.log');
@@ -287,20 +289,20 @@ class MonitorLogsCommand extends Command
         $path = $parsed['path'] ?? '/';
         $query = $parsed['query'] ?? null;
 
-        $this->line("  <fg={$barColor}>│</>   <fg=green>Base:</> " . $this->escapeLine($base));
-        $this->line("  <fg={$barColor}>│</>   <fg=green>Path:</> " . $this->escapeLine($path));
+        $this->line("  <fg={$barColor}>│</>   <fg=#eab308>Base:</> <fg=#0ea5e9>" . $this->escapeLine($base) . "</>");
+        $this->line("  <fg={$barColor}>│</>   <fg=#eab308>Path:</> <fg=#a78bfa>" . $this->escapeLine($path) . "</>");
 
         if ($query !== null && $query !== '') {
-            $this->line("  <fg={$barColor}>│</>   <fg=green>Query Params:</>");
+            $this->line("  <fg={$barColor}>│</>   <fg=#eab308>Query Params:</>");
             foreach (explode('&', $query) as $param) {
                 $eq = strpos($param, '=');
                 if ($eq !== false) {
                     $key = substr($param, 0, $eq);
                     $value = substr($param, $eq + 1);
                     $value = rawurldecode($value);
-                    $this->line("  <fg={$barColor}>│</>     <fg=cyan>" . $this->escapeLine($key) . "</> = " . $this->escapeLine($value));
+                    $this->line("  <fg={$barColor}>│</>     <fg=#06b6d4>" . $this->escapeLine($key) . "</> <fg=#6b7280>=</> <fg=white>" . $this->escapeLine($value) . "</>");
                 } else {
-                    $this->line("  <fg={$barColor}>│</>     " . $this->escapeLine($param));
+                    $this->line("  <fg={$barColor}>│</>     <fg=white>" . $this->escapeLine($param) . "</>");
                 }
             }
         }
@@ -320,7 +322,7 @@ class MonitorLogsCommand extends Command
 
         $levelColor = $this->levelColor($entry['level'] ?? 200);
         $this->line('');
-        $this->line("<bg={$levelColor};fg=white;options=bold> {$level} </> <fg=gray>{$timestamp}</> {$message}");
+        $this->line("<bg={$levelColor};fg=white;options=bold> {$level} </> <fg=#6b7280>{$timestamp}</> <fg=white>{$message}</>");
 
         $ctx = $context['context'] ?? null;
         $events = $context['events'] ?? null;
@@ -333,7 +335,7 @@ class MonitorLogsCommand extends Command
             $this->processTimelineEvents($events, $ctx ?? []);
         }
 
-        $this->line('<fg=gray>──────────────────────────────────────────────────────────────────────────────</>');
+        $this->line('<fg=#374151>──────────────────────────────────────────────────────────────────────────────</>');
     }
 
     protected function levelColor(int $level): string
@@ -352,7 +354,7 @@ class MonitorLogsCommand extends Command
      */
     protected function formatContextBlock(array $ctx): void
     {
-        $this->line('  <fg=gray>┌─ Context</>');
+        $this->line('  <fg=#60a5fa>┌─ <options=bold>Context</></>');
 
         $keys = ['request_id', 'run_id', 'method', 'path', 'full_url', 'ip', 'duration_ms', 'status', 'command'];
         foreach ($keys as $key) {
@@ -361,33 +363,45 @@ class MonitorLogsCommand extends Command
             }
             $value = $ctx[$key];
             if ($key === 'full_url' && is_scalar($value) && $this->isUrl((string) $value)) {
-                $this->line('  <fg=gray>│</>   <options=bold>full_url</>:');
-                $this->formatUrl((string) $value, 'gray');
+                $this->line('  <fg=#60a5fa>│</>   <fg=#eab308;options=bold>full_url</>:');
+                $this->formatUrl((string) $value, '#60a5fa');
                 continue;
             }
             if (is_array($value)) {
-                $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>:');
-                $this->outputColorizedJson($this->colorizeJson($value), '  <fg=gray>│</>   ');
+                $this->line('  <fg=#60a5fa>│</>   <fg=#eab308;options=bold>' . $key . '</>:');
+                $this->outputColorizedJson($this->colorizeJson($value), '  <fg=#60a5fa>│</>   ');
                 continue;
             }
             $display = is_scalar($value) ? (string) $value : json_encode($value);
-            $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>: ' . $this->escapeLine($display));
+            $valColor = $key === 'status' ? $this->statusCodeColor((int) $value) : 'white';
+            $this->line('  <fg=#60a5fa>│</>   <fg=#eab308;options=bold>' . $key . '</>: <fg=' . $valColor . '>' . $this->escapeLine($display) . '</>');
         }
 
         $rest = array_diff_key($ctx, array_flip($keys));
         if ($rest !== []) {
             foreach ($rest as $key => $value) {
                 if (is_array($value)) {
-                    $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>:');
-                    $this->outputColorizedJson($this->colorizeJson($value), '  <fg=gray>│</>   ');
+                    $this->line('  <fg=#60a5fa>│</>   <fg=#eab308;options=bold>' . $key . '</>:');
+                    $this->outputColorizedJson($this->colorizeJson($value), '  <fg=#60a5fa>│</>   ');
                     continue;
                 }
                 $display = is_scalar($value) ? (string) $value : json_encode($value);
-                $this->line('  <fg=gray>│</>   <options=bold>' . $key . '</>: ' . $this->escapeLine($display));
+                $this->line('  <fg=#60a5fa>│</>   <fg=#eab308;options=bold>' . $key . '</>: <fg=white>' . $this->escapeLine($display) . '</>');
             }
         }
 
-        $this->line('  <fg=gray>└─</>');
+        $this->line('  <fg=#60a5fa>└─</>');
+    }
+
+    protected function statusCodeColor(int $code): string
+    {
+        return match (true) {
+            $code >= 500 => '#ef4444',
+            $code >= 400 => '#f97316',
+            $code >= 300 => '#eab308',
+            $code >= 200 => '#22c55e',
+            default => 'white',
+        };
     }
 
     /**
@@ -406,6 +420,7 @@ class MonitorLogsCommand extends Command
      */
     protected function processTimelineEvents(array $events, array $mainContext = []): void
     {
+        $this->sqlQueryCount = 0;
         usort($events, fn ($a, $b) => ($a['timestamp'] ?? 0) <=> ($b['timestamp'] ?? 0));
 
         foreach ($events as $event) {
@@ -433,29 +448,36 @@ class MonitorLogsCommand extends Command
         $sql = $context['SQL'] ?? '';
         $time = $context['execution_time'] ?? '0';
 
-        $this->line('  <fg=cyan>┌─ [SQL]</> ' . $this->escapeLine((string) $time));
+        $this->sqlQueryCount++;
+        $timeStr = (string) $time;
+        $ms = (float) preg_replace('/[^0-9.]/', '', $timeStr);
+        if (stripos($timeStr, 's') !== false && stripos($timeStr, 'ms') === false) {
+            $ms *= 1000;
+        }
+        $timeColor = $ms > 100 ? '#ef4444' : ($ms > 20 ? '#eab308' : '#22c55e');
+        $this->line('  <fg=#06b6d4>┌─ <options=bold>[SQL]</></> <fg=' . $timeColor . '>' . $this->escapeLine((string) $time) . '</> <fg=#6b7280>(#' . $this->sqlQueryCount . ')</>');
 
         if (class_exists(\Doctrine\SqlFormatter\SqlFormatter::class) && class_exists(\Doctrine\SqlFormatter\CliHighlighter::class)) {
             $formatter = new \Doctrine\SqlFormatter\SqlFormatter(new \Doctrine\SqlFormatter\CliHighlighter());
             $formatted = $formatter->format($sql);
             foreach (explode("\n", $formatted) as $formattedLine) {
-                $this->line('  <fg=cyan>│</>   ' . $formattedLine);
+                $this->line('  <fg=#06b6d4>│</>   ' . $formattedLine);
             }
         } else {
             foreach (explode("\n", $sql) as $sqlLine) {
-                $this->line('  <fg=cyan>│</>   ' . $this->escapeLine($sqlLine));
+                $this->line('  <fg=#06b6d4>│</>   <fg=#e5e7eb>' . $this->escapeLine($sqlLine) . '</>');
             }
         }
 
         $trace = $context['trace'] ?? null;
         if (is_array($trace) && $trace !== []) {
-            $this->line('  <fg=cyan>│</>   <fg=gray>Trace:</>');
+            $this->line('  <fg=#06b6d4>│</>   <fg=#6b7280>Trace:</>');
             foreach (array_slice($trace, 0, 5) as $frame) {
-                $this->line('  <fg=cyan>│</>     ' . $this->escapeLine((string) $frame));
+                $this->line('  <fg=#06b6d4>│</>     <fg=#9ca3af>' . $this->escapeLine((string) $frame) . '</>');
             }
         }
 
-        $this->line('  <fg=cyan>└─</>');
+        $this->line('  <fg=#06b6d4>└─</>');
     }
 
     /**
@@ -472,44 +494,45 @@ class MonitorLogsCommand extends Command
         $queryParams = $context['query_params'] ?? [];
         $headers = $context['headers'] ?? [];
 
-        $this->line('  <fg=green>┌─ Incoming Request</>');
-        $this->line('  <fg=green>│</>   <options=bold>' . $this->escapeLine((string) $method) . '</> ' . $this->escapeLine((string) $url));
+        $methodColor = in_array(strtoupper((string) $method), ['GET', 'HEAD'], true) ? '#22c55e' : (strtoupper((string) $method) === 'POST' ? '#3b82f6' : '#a855f7');
+        $this->line('  <fg=#16a34a>┌─ <options=bold>Incoming Request</></>');
+        $this->line('  <fg=#16a34a>│</>   <fg=' . $methodColor . ';options=bold>' . $this->escapeLine((string) $method) . '</> <fg=#0ea5e9>' . $this->escapeLine((string) $url) . '</>');
         if ($url !== '' && $this->isUrl($url)) {
-            $this->formatUrl($url, 'green');
+            $this->formatUrl($url, '#16a34a');
         }
         if ($ip !== null && $ip !== '') {
-            $this->line('  <fg=green>│</>   IP: ' . $this->escapeLine((string) $ip));
+            $this->line('  <fg=#16a34a>│</>   <fg=#eab308>IP:</> <fg=white>' . $this->escapeLine((string) $ip) . '</>');
         }
         if ($userAgent !== null && $userAgent !== '') {
-            $this->line('  <fg=green>│</>   User-Agent: ' . $this->escapeLine((string) $userAgent));
+            $this->line('  <fg=#16a34a>│</>   <fg=#eab308>User-Agent:</> <fg=#9ca3af>' . $this->escapeLine((string) $userAgent) . '</>');
         }
 
         if (is_array($body) && $body !== []) {
-            $this->line('  <fg=green>│</>   <options=bold>Body:</>');
+            $this->line('  <fg=#16a34a>│</>   <fg=#eab308;options=bold>Body:</>');
             $colored = $this->colorizeJson($body);
-            $this->outputColorizedJson($colored, '  <fg=green>│</>   ');
+            $this->outputColorizedJson($colored, '  <fg=#16a34a>│</>   ');
         } elseif (!is_array($body) && (string) $body !== '') {
             $bodyStr = (string) $body;
             $decoded = json_decode($bodyStr, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $this->line('  <fg=green>│</>   <options=bold>Body:</>');
-                $this->outputColorizedJson($this->colorizeJson($decoded), '  <fg=green>│</>   ');
+                $this->line('  <fg=#16a34a>│</>   <fg=#eab308;options=bold>Body:</>');
+                $this->outputColorizedJson($this->colorizeJson($decoded), '  <fg=#16a34a>│</>   ');
             } else {
-                $this->line('  <fg=green>│</>   Body: ' . $this->escapeLine($bodyStr));
+                $this->line('  <fg=#16a34a>│</>   <fg=#eab308>Body:</> <fg=white>' . $this->escapeLine($bodyStr) . '</>');
             }
         }
 
         if (is_array($queryParams) && $queryParams !== []) {
-            $this->line('  <fg=green>│</>   <options=bold>Query:</>');
-            $this->formatNestedArray('  <fg=green>│</>   ', $queryParams);
+            $this->line('  <fg=#16a34a>│</>   <fg=#eab308;options=bold>Query:</>');
+            $this->formatNestedArray('  <fg=#16a34a>│</>   ', $queryParams);
         }
 
         if (is_array($headers) && $headers !== []) {
-            $this->line('  <fg=green>│</>   <options=bold>Headers:</>');
-            $this->formatNestedArray('  <fg=green>│</>   ', $this->flattenHeaders($headers));
+            $this->line('  <fg=#16a34a>│</>   <fg=#eab308;options=bold>Headers:</>');
+            $this->formatNestedArray('  <fg=#16a34a>│</>   ', $this->flattenHeaders($headers));
         }
 
-        $this->line('  <fg=green>└─</>');
+        $this->line('  <fg=#16a34a>└─</>');
     }
 
     /**
@@ -524,44 +547,46 @@ class MonitorLogsCommand extends Command
         $body = $context['body'] ?? null;
         $headers = $context['headers'] ?? [];
 
-        $this->line('  <fg=magenta>┌─ Outgoing Response</>');
+        $statusInt = $status !== null ? (int) $status : 0;
+        $statusColor = $this->statusCodeColor($statusInt);
+        $this->line('  <fg=#c026d3>┌─ <options=bold>Outgoing Response</></>');
         if ($status !== null) {
-            $this->line('  <fg=magenta>│</>   Status: ' . $this->escapeLine((string) $status));
+            $this->line('  <fg=#c026d3>│</>   <fg=#eab308>Status:</> <fg=' . $statusColor . ';options=bold>' . $this->escapeLine((string) $status) . '</>');
         }
         if ($redirectTarget !== null && $redirectTarget !== '') {
-            $this->line('  <fg=magenta>│</>   Redirect: ' . $this->escapeLine((string) $redirectTarget));
+            $this->line('  <fg=#c026d3>│</>   <fg=#eab308>Redirect:</> <fg=#0ea5e9>' . $this->escapeLine((string) $redirectTarget) . '</>');
         }
         if ($contentType !== null && $contentType !== '') {
-            $this->line('  <fg=magenta>│</>   Content-Type: ' . $this->escapeLine((string) $contentType));
+            $this->line('  <fg=#c026d3>│</>   <fg=#eab308>Content-Type:</> <fg=white>' . $this->escapeLine((string) $contentType) . '</>');
         }
         if ($contentLength !== null) {
-            $this->line('  <fg=magenta>│</>   Content-Length: ' . $this->escapeLine((string) $contentLength));
+            $this->line('  <fg=#c026d3>│</>   <fg=#eab308>Content-Length:</> <fg=#a78bfa>' . $this->escapeLine((string) $contentLength) . '</>');
         }
 
         if (is_array($body) && $body !== []) {
-            $this->line('  <fg=magenta>│</>   <options=bold>Body:</>');
+            $this->line('  <fg=#c026d3>│</>   <fg=#eab308;options=bold>Body:</>');
             $colored = $this->colorizeJson($body);
-            $this->outputColorizedJson($colored, '  <fg=magenta>│</>   ');
+            $this->outputColorizedJson($colored, '  <fg=#c026d3>│</>   ');
         } elseif (is_string($body) && $body !== '') {
             $decoded = json_decode($body, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $this->line('  <fg=magenta>│</>   <options=bold>Body:</>');
+                $this->line('  <fg=#c026d3>│</>   <fg=#eab308;options=bold>Body:</>');
                 $colored = $this->colorizeJson($decoded);
-                $this->outputColorizedJson($colored, '  <fg=magenta>│</>   ');
+                $this->outputColorizedJson($colored, '  <fg=#c026d3>│</>   ');
             } else {
                 $preview = strlen($body) > 500 ? substr($body, 0, 500) . '…' : $body;
                 foreach (explode("\n", $preview) as $bodyLine) {
-                    $this->line('  <fg=magenta>│</>   ' . $this->escapeLine($bodyLine));
+                    $this->line('  <fg=#c026d3>│</>   <fg=#e5e7eb>' . $this->escapeLine($bodyLine) . '</>');
                 }
             }
         }
 
         if (is_array($headers) && $headers !== []) {
-            $this->line('  <fg=magenta>│</>   <options=bold>Headers:</>');
-            $this->formatNestedArray('  <fg=magenta>│</>   ', $this->flattenHeaders($headers));
+            $this->line('  <fg=#c026d3>│</>   <fg=#eab308;options=bold>Headers:</>');
+            $this->formatNestedArray('  <fg=#c026d3>│</>   ', $this->flattenHeaders($headers));
         }
 
-        $this->line('  <fg=magenta>└─</>');
+        $this->line('  <fg=#c026d3>└─</>');
     }
 
     /**
@@ -572,15 +597,15 @@ class MonitorLogsCommand extends Command
      */
     protected function formatUser(array $context): void
     {
-        $this->line('  <fg=yellow>┌─ User</>');
+        $this->line('  <fg=#eab308>┌─ <options=bold>User</></>');
         foreach ($context as $key => $value) {
             if ($value === null) {
                 continue;
             }
             $display = is_bool($value) ? ($value ? 'true' : 'false') : $this->escapeLine((string) $value);
-            $this->line('  <fg=yellow>│</>   ' . $this->escapeLine((string) $key) . ': ' . $display);
+            $this->line('  <fg=#eab308>│</>   <fg=#06b6d4>' . $this->escapeLine((string) $key) . '</>: <fg=white>' . $display . '</>');
         }
-        $this->line('  <fg=yellow>└─</>');
+        $this->line('  <fg=#eab308>└─</>');
     }
 
     /**
@@ -592,18 +617,18 @@ class MonitorLogsCommand extends Command
         $key = $context['key'] ?? '';
         $expiration = $context['expiration'] ?? null;
 
-        $this->line('  <fg=blue>┌─ Cache</> ' . $this->escapeLine((string) $event) . ' key: ' . $this->escapeLine((string) $key));
+        $this->line('  <fg=#3b82f6>┌─ <options=bold>Cache</></> <fg=#a78bfa>' . $this->escapeLine((string) $event) . '</> <fg=#eab308>key:</> <fg=white>' . $this->escapeLine((string) $key) . '</>');
         if ($expiration !== null) {
-            $this->line('  <fg=blue>│</>   expiration: ' . $this->escapeLine((string) $expiration) . 's');
+            $this->line('  <fg=#3b82f6>│</>   <fg=#eab308>expiration:</> <fg=#22c55e>' . $this->escapeLine((string) $expiration) . 's</>');
         }
         $trace = $context['trace'] ?? null;
         if (is_array($trace) && $trace !== []) {
-            $this->line('  <fg=blue>│</>   <fg=gray>Trace:</>');
+            $this->line('  <fg=#3b82f6>│</>   <fg=#6b7280>Trace:</>');
             foreach (array_slice($trace, 0, 3) as $frame) {
-                $this->line('  <fg=blue>│</>     ' . $this->escapeLine((string) $frame));
+                $this->line('  <fg=#3b82f6>│</>     <fg=#9ca3af>' . $this->escapeLine((string) $frame) . '</>');
             }
         }
-        $this->line('  <fg=blue>└─</>');
+        $this->line('  <fg=#3b82f6>└─</>');
     }
 
     /**
@@ -619,31 +644,31 @@ class MonitorLogsCommand extends Command
         $exception = $context['exception'] ?? null;
         $size = $context['size'] ?? null;
 
-        $this->line('  <fg=#ff9800>┌─ Queue</> ' . $this->escapeLine((string) $event));
-        $this->line('  <fg=#ff9800>│</>   job: ' . $this->escapeLine((string) $job));
+        $this->line('  <fg=#f97316>┌─ <options=bold>Queue</></> <fg=#a78bfa>' . $this->escapeLine((string) $event) . '</>');
+        $this->line('  <fg=#f97316>│</>   <fg=#eab308>job:</> <fg=white>' . $this->escapeLine((string) $job) . '</>');
         if ($queue !== null) {
-            $this->line('  <fg=#ff9800>│</>   queue: ' . $this->escapeLine((string) $queue));
+            $this->line('  <fg=#f97316>│</>   <fg=#eab308>queue:</> <fg=#06b6d4>' . $this->escapeLine((string) $queue) . '</>');
         }
         if ($connection !== null) {
-            $this->line('  <fg=#ff9800>│</>   connection: ' . $this->escapeLine((string) $connection));
+            $this->line('  <fg=#f97316>│</>   <fg=#eab308>connection:</> <fg=white>' . $this->escapeLine((string) $connection) . '</>');
         }
         if ($attempts !== null) {
-            $this->line('  <fg=#ff9800>│</>   attempts: ' . $this->escapeLine((string) $attempts));
+            $this->line('  <fg=#f97316>│</>   <fg=#eab308>attempts:</> <fg=#a78bfa>' . $this->escapeLine((string) $attempts) . '</>');
         }
         if ($exception !== null) {
-            $this->line('  <fg=#ff9800>│</>   <fg=red>exception: ' . $this->escapeLine((string) $exception) . '</>');
+            $this->line('  <fg=#f97316>│</>   <fg=#ef4444;options=bold>exception:</> <fg=#fca5a5>' . $this->escapeLine((string) $exception) . '</>');
         }
         if ($size !== null) {
-            $this->line('  <fg=#ff9800>│</>   size: ' . $this->escapeLine((string) $size));
+            $this->line('  <fg=#f97316>│</>   <fg=#eab308>size:</> <fg=white>' . $this->escapeLine((string) $size) . '</>');
         }
         $trace = $context['trace'] ?? null;
         if (is_array($trace) && $trace !== []) {
-            $this->line('  <fg=#ff9800>│</>   <fg=gray>Trace:</>');
+            $this->line('  <fg=#f97316>│</>   <fg=#6b7280>Trace:</>');
             foreach (array_slice($trace, 0, 3) as $frame) {
-                $this->line('  <fg=#ff9800>│</>     ' . $this->escapeLine((string) $frame));
+                $this->line('  <fg=#f97316>│</>     <fg=#9ca3af>' . $this->escapeLine((string) $frame) . '</>');
             }
         }
-        $this->line('  <fg=#ff9800>└─</>');
+        $this->line('  <fg=#f97316>└─</>');
     }
 
     /**
@@ -654,26 +679,29 @@ class MonitorLogsCommand extends Command
         $request = $context['request'] ?? [];
         $response = $context['response'] ?? null;
 
-        $this->line('  <fg=cyan>┌─ HTTP Call</>');
+        $this->line('  <fg=#0d9488>┌─ <options=bold>HTTP Call</></>');
         if (is_array($request) && isset($request['url'])) {
             $method = $request['method'] ?? 'GET';
             $reqUrl = (string) $request['url'];
-            $this->line('  <fg=cyan>│</>   ' . $this->escapeLine((string) $method) . ' ' . $this->escapeLine($reqUrl));
+            $methodColor = in_array(strtoupper((string) $method), ['GET', 'HEAD'], true) ? '#22c55e' : '#3b82f6';
+            $this->line('  <fg=#0d9488>│</>   <fg=' . $methodColor . ';options=bold>' . $this->escapeLine((string) $method) . '</> <fg=#0ea5e9>' . $this->escapeLine($reqUrl) . '</>');
             if ($this->isUrl($reqUrl)) {
-                $this->formatUrl($reqUrl, 'cyan');
+                $this->formatUrl($reqUrl, '#0d9488');
             }
         }
         if (is_array($response)) {
             $status = $response['status_code'] ?? $response['status'] ?? null;
             $duration = $response['duration_ms'] ?? null;
             if ($status !== null) {
-                $this->line('  <fg=cyan>│</>   Response: ' . $this->escapeLine((string) $status));
+                $statusInt = (int) $status;
+                $statusColor = $this->statusCodeColor($statusInt);
+                $this->line('  <fg=#0d9488>│</>   <fg=#eab308>Response:</> <fg=' . $statusColor . '>' . $this->escapeLine((string) $status) . '</>');
             }
             if ($duration !== null) {
-                $this->line('  <fg=cyan>│</>   Duration: ' . $this->escapeLine((string) $duration) . 'ms');
+                $this->line('  <fg=#0d9488>│</>   <fg=#eab308>Duration:</> <fg=#22c55e>' . $this->escapeLine((string) $duration) . 'ms</>');
             }
         }
-        $this->line('  <fg=cyan>└─</>');
+        $this->line('  <fg=#0d9488>└─</>');
     }
 
     /**
@@ -681,11 +709,11 @@ class MonitorLogsCommand extends Command
      */
     protected function formatGenericEvent(string $message, array $context): void
     {
-        $this->line('  <fg=gray>┌─</> ' . $this->escapeLine($message));
+        $this->line('  <fg=#6b7280>┌─</> <fg=#a78bfa>' . $this->escapeLine($message) . '</>');
         if ($context !== []) {
-            $this->formatNestedArray('  <fg=gray>│</>   ', $context);
+            $this->formatNestedArray('  <fg=#6b7280>│</>   ', $context);
         }
-        $this->line('  <fg=gray>└─</>');
+        $this->line('  <fg=#6b7280>└─</>');
     }
 
     /**
@@ -695,16 +723,18 @@ class MonitorLogsCommand extends Command
     {
         $indent = str_repeat('  ', $depth);
         foreach ($data as $key => $value) {
+            $keyPart = '<fg=#eab308>' . $this->escapeLine((string) $key) . '</>: ';
             if (is_array($value) && !$this->isAssoc($value)) {
-                $this->line($prefix . $indent . $this->escapeLine((string) $key) . ': [');
+                $this->line($prefix . $indent . $keyPart . '<fg=#6b7280>[</>');
                 $this->formatNestedArray($prefix, $value, $depth + 1);
-                $this->line($prefix . $indent . ']');
+                $this->line($prefix . $indent . '  <fg=#6b7280>]</>');
             } elseif (is_array($value)) {
-                $this->line($prefix . $indent . $this->escapeLine((string) $key) . ':');
+                $this->line($prefix . $indent . $keyPart);
                 $this->formatNestedArray($prefix, $value, $depth + 1);
             } else {
                 $display = is_bool($value) ? ($value ? 'true' : 'false') : (string) $value;
-                $this->line($prefix . $indent . $this->escapeLine((string) $key) . ': ' . $this->escapeLine($display));
+                $valColor = is_bool($value) ? '#a78bfa' : 'white';
+                $this->line($prefix . $indent . $keyPart . '<fg=' . $valColor . '>' . $this->escapeLine($display) . '</>');
             }
         }
     }
