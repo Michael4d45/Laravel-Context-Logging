@@ -14,7 +14,8 @@ class MonitorLogsCommand extends Command
     protected $signature = 'log:monitor
                             {file? : The path to the log file to monitor}
                             {--lines=0 : Number of recent lines to read on start (0 = tail only)}
-                            {--threshold=50 : Skip batch if new lines exceed this (0 = no limit)}';
+                            {--threshold=50 : Skip batch if new lines exceed this (0 = no limit)}
+                            {--auto-truncate= : Max size before truncating to half (e.g. 10MB, 1GB)}';
 
     /**
      * The console command description.
@@ -25,10 +26,22 @@ class MonitorLogsCommand extends Command
 
     protected int $sqlQueryCount = 0;
 
+    /** @var int|null Max size in bytes; when file exceeds this, truncate to half (null = disabled) */
+    protected ?int $autoTruncateBytes = null;
+
     public function handle(): int
     {
         $file = $this->argument('file') ?? storage_path('logs/laravel.log');
         $this->skipThreshold = (int) $this->option('threshold');
+        $autoTruncate = $this->option('auto-truncate');
+        if ($autoTruncate !== null && $autoTruncate !== '') {
+            $this->autoTruncateBytes = $this->parseSizeToBytes((string) $autoTruncate);
+            if ($this->autoTruncateBytes === null || $this->autoTruncateBytes <= 0) {
+                $this->error("Invalid --auto-truncate value: '{$autoTruncate}'. Use e.g. 10MB, 1GB, 500KB.");
+
+                return self::FAILURE;
+            }
+        }
 
         if (!is_file($file)) {
             $this->error("The log file does not exist: '{$file}'");
@@ -60,6 +73,24 @@ class MonitorLogsCommand extends Command
             $currentSize = filesize($file);
             if ($currentSize === false) {
                 usleep(500000);
+                continue;
+            }
+
+            if ($this->autoTruncateBytes !== null && $currentSize >= $this->autoTruncateBytes) {
+                fclose($handle);
+                $newSize = $this->truncateLogFileToHalf($file, $currentSize);
+                if ($newSize === null) {
+                    $this->error('Failed to truncate log file.');
+
+                    return self::FAILURE;
+                }
+                $this->warn("Log file exceeded {$this->formatBytes($this->autoTruncateBytes)}. Truncated to half: " . $this->formatBytes($newSize) . '.');
+                $handle = fopen($file, 'r');
+                if ($handle === false) {
+                    return self::FAILURE;
+                }
+                fseek($handle, 0, SEEK_END);
+                $lastPosition = ftell($handle);
                 continue;
             }
 
@@ -102,6 +133,86 @@ class MonitorLogsCommand extends Command
         $lines = array_slice(array_filter($lines, fn (string $l) => trim($l) !== ''), -$lineCount);
         $this->processLines($lines);
         fseek($handle, 0, SEEK_END);
+    }
+
+    /**
+     * Parse a size string (e.g. "10MB", "1GB", "500KB") to bytes. Returns null if invalid.
+     */
+    protected function parseSizeToBytes(string $value): ?int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        if (preg_match('/^(\d+(?:\.\d+)?)\s*([KMGTP]?B?)$/i', $value, $m)) {
+            $num = (float) $m[1];
+            $unit = strtoupper($m[2]);
+            $mult = match ($unit) {
+                'B', '' => 1,
+                'KB', 'K' => 1024,
+                'MB', 'M' => 1024 * 1024,
+                'GB', 'G' => 1024 * 1024 * 1024,
+                'TB', 'T' => 1024 * 1024 * 1024 * 1024,
+                'PB', 'P' => 1024 * 1024 * 1024 * 1024 * 1024,
+                default => null,
+            };
+            if ($mult !== null && $num >= 0) {
+                return (int) round($num * $mult);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Truncate the log file to half its size, keeping the most recent half. Returns new size in bytes or null on failure.
+     */
+    protected function truncateLogFileToHalf(string $file, int $currentSize): ?int
+    {
+        $half = (int) floor($currentSize / 2);
+        if ($half <= 0) {
+            return 0;
+        }
+        $r = fopen($file, 'r');
+        if ($r === false) {
+            return null;
+        }
+        if (fseek($r, $currentSize - $half, SEEK_SET) !== 0) {
+            fclose($r);
+
+            return null;
+        }
+        $content = stream_get_contents($r);
+        fclose($r);
+        if ($content === false || strlen($content) !== $half) {
+            return null;
+        }
+        $w = fopen($file, 'wb');
+        if ($w === false) {
+            return null;
+        }
+        $written = fwrite($w, $content);
+        fclose($w);
+        if ($written !== $half) {
+            return null;
+        }
+
+        return $half;
+    }
+
+    protected function formatBytes(int $bytes): string
+    {
+        if ($bytes >= 1073741824) {
+            return round($bytes / 1073741824, 1) . 'GB';
+        }
+        if ($bytes >= 1048576) {
+            return round($bytes / 1048576, 1) . 'MB';
+        }
+        if ($bytes >= 1024) {
+            return round($bytes / 1024, 1) . 'KB';
+        }
+
+        return $bytes . 'B';
     }
 
     /**
