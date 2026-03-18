@@ -2,25 +2,23 @@
 
 namespace Michael4d45\ContextLogging;
 
-use Illuminate\Http\Client\Factory as HttpFactory;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\StreamInterface;
+use Illuminate\Support\Facades\Http;
 
 /**
- * Registers global HTTP middleware that auto-captures outbound request/response context.
+ * Handles outbound HTTP request/response context capture.
  */
 class HttpClientInstrumentation
 {
     protected bool $registered = false;
 
+    protected int $syncedRecordedCalls = 0;
+
     public function __construct(
-        protected HttpFactory $http,
         protected ContextStore $contextStore,
     ) {}
 
     /**
-     * Register global middleware once.
+     * Enable HTTP request/response recording once.
      */
     public function register(): void
     {
@@ -30,79 +28,79 @@ class HttpClientInstrumentation
 
         $this->registered = true;
 
-        $this->http->globalMiddleware(function (callable $handler) {
-            return function (RequestInterface $request, array $options) use ($handler) {
-                $url = (string) $request->getUri();
-                $urlParts = $this->extractUrlParts($url);
+        Http::record();
+    }
 
-                $requestData = [
-                    'method' => $request->getMethod(),
-                    'url' => $url,
-                    'path' => $urlParts['path'],
-                    'query_params' => $this->maskSensitiveQueryParams($urlParts['query_params']),
+    /**
+     * Synchronize newly recorded HTTP request/response pairs into the context store.
+     */
+    public function syncRecordedCalls(): void
+    {
+        if (!$this->contextStore->isHttpEnabled()) {
+            return;
+        }
+
+        $recorded = Http::recorded()->values();
+
+        if ($recorded->isEmpty() || $this->syncedRecordedCalls >= $recorded->count()) {
+            return;
+        }
+
+        for ($i = $this->syncedRecordedCalls; $i < $recorded->count(); $i++) {
+            [$request, $response] = $recorded[$i];
+
+            $url = $request->url();
+            $urlParts = $this->extractUrlParts($url);
+
+            $requestData = [
+                'method' => $request->method(),
+                'url' => $url,
+                'path' => $urlParts['path'],
+                'query_params' => $this->maskSensitiveQueryParams($urlParts['query_params']),
+            ];
+
+            if ((bool) config('context-logging.http.capture_headers', false)) {
+                $requestData['headers'] = $this->normalizeHeaders($request->headers());
+            }
+
+            if ((bool) config('context-logging.http.capture_body', false)) {
+                $body = $request->body();
+
+                if ($body !== null) {
+                    $requestData['body'] = $this->decodeAndMaskJsonBody(
+                        $request->header('Content-Type'),
+                        $body
+                    );
+                }
+            }
+
+            $httpCallId = $this->contextStore->beginHttpCall($requestData);
+
+            if ($response !== null) {
+                $responseData = [
+                    'status' => $response->status(),
                 ];
 
                 if ((bool) config('context-logging.http.capture_headers', false)) {
-                    $requestData['headers'] = $this->normalizeHeaders($request->getHeaders());
+                    $responseData['headers'] = $response->headers();
                 }
 
                 if ((bool) config('context-logging.http.capture_body', false)) {
-                    $body = $this->readBody($request->getBody());
+                    $body = $response->body();
 
                     if ($body !== null) {
-                        $requestData['body'] = $this->decodeAndMaskJsonBody(
-                            $request->getHeader('Content-Type'),
+                        $responseData['body'] = $this->decodeAndMaskJsonBody(
+                            [$response->header('Content-Type')],
                             $body
                         );
                     }
                 }
 
-                $httpCallId = $this->contextStore->beginHttpCall($requestData);
+                $this->contextStore->completeHttpCall($httpCallId, $responseData);
+            }
+        }
 
-                return $handler($request, $options)->then(
-                    function (ResponseInterface $response) use ($httpCallId) {
-                        $responseData = [
-                            'status' => $response->getStatusCode(),
-                        ];
-
-                        if ((bool) config('context-logging.http.capture_headers', false)) {
-                            $responseData['headers'] = $this->normalizeHeaders($response->getHeaders());
-                        }
-
-                        if ((bool) config('context-logging.http.capture_body', false)) {
-                            $body = $this->readBody($response->getBody());
-
-                            if ($body !== null) {
-                                $responseData['body'] = $this->decodeAndMaskJsonBody(
-                                    $response->getHeader('Content-Type'),
-                                    $body
-                                );
-                            }
-                        }
-
-                        $this->contextStore->completeHttpCall($httpCallId, $responseData);
-
-                        return $response;
-                    },
-                    function (mixed $reason) use ($httpCallId) {
-                        $message = $reason instanceof \Throwable
-                            ? $reason->getMessage()
-                            : (string) $reason;
-
-                        $this->contextStore->completeHttpCall($httpCallId, [
-                            'status' => 0,
-                            'error' => $message,
-                        ]);
-
-                        if ($reason instanceof \Throwable) {
-                            throw $reason;
-                        }
-
-                        throw new \RuntimeException($message);
-                    }
-                );
-            };
-        });
+        $this->syncedRecordedCalls = $recorded->count();
     }
 
     /**
@@ -126,35 +124,6 @@ class HttpClientInstrumentation
         }
 
         return $normalized;
-    }
-
-    /**
-     * Safely read a stream body while restoring the original cursor position.
-     */
-    protected function readBody(StreamInterface $stream): ?string
-    {
-        if (!$stream->isReadable()) {
-            return null;
-        }
-
-        $position = null;
-
-        try {
-            if ($stream->isSeekable()) {
-                $position = $stream->tell();
-                $stream->rewind();
-            }
-
-            $contents = $stream->getContents();
-
-            if ($stream->isSeekable() && $position !== null) {
-                $stream->seek($position);
-            }
-
-            return $contents;
-        } catch (\Throwable) {
-            return null;
-        }
     }
 
     /**

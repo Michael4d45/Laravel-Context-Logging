@@ -98,6 +98,14 @@ class ContextStore
     }
 
     /**
+     * Check if HTTP call tracking is enabled.
+     */
+    public function isHttpEnabled(): bool
+    {
+        return $this->httpEnabled;
+    }
+
+    /**
      * Get all context data.
      */
     public function getAllContext(): array
@@ -320,6 +328,10 @@ class ContextStore
      */
     public function getHttpCalls(): array
     {
+        if (function_exists('app')) {
+            app(HttpClientInstrumentation::class)->syncRecordedCalls();
+        }
+
         return array_values($this->httpCalls);
     }
 }

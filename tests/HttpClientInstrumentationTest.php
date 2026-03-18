@@ -13,6 +13,10 @@ class HttpClientInstrumentationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        config()->set('context-logging.http.enabled', true);
+        $this->app->make(HttpClientInstrumentation::class)->register();
+
         HttpContextHooks::clear();
     }
 

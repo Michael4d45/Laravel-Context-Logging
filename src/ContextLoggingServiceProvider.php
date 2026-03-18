@@ -8,7 +8,6 @@ use Illuminate\Cache\Events\KeyForgotten;
 use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Database\Events\QueryExecuted;
-use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -45,7 +44,6 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         $this->app->singleton(HttpClientInstrumentation::class, function ($app) {
             return new HttpClientInstrumentation(
-                $app->make(HttpFactory::class),
                 $app->make(ContextStore::class),
             );
         });
@@ -77,13 +75,9 @@ class ContextLoggingServiceProvider extends ServiceProvider
             __DIR__.'/../config/context-logging.php' => config_path('context-logging.php'),
         ], 'config');
 
-        $this->app->booted(function () {
-            if (!(bool) config('context-logging.http.enabled', true)) {
-                return;
-            }
-
+        if ((bool) config('context-logging.http.enabled', true)) {
             $this->app->make(HttpClientInstrumentation::class)->register();
-        });
+        }
 
         if ($this->app->runningInConsole()) {
             $this->bootConsoleContext();
@@ -226,7 +220,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
         Event::listen(QueueBusy::class, function (QueueBusy $event) use ($store): void {
             $store()->addEvent('warning', 'queue', [
                 'event' => 'QueueBusy',
-                'connection' => $event->connection,
+                'connection' => $event->connectionName ?? $event->connection ?? null,
                 'queue' => $event->queue,
                 'size' => $event->size,
             ]);
@@ -324,9 +318,10 @@ class ContextLoggingServiceProvider extends ServiceProvider
         if (class_exists($messageSent)) {
             Event::listen($messageSent, function ($event) use ($connectionId, $emitReverbEvent, $trace): void {
                 if (str_contains($event->message, 'pusher:connection_established')) {
+                    $connection = $event->connection ?? null;
                     $emitReverbEvent([
                         'event' => 'ClientConnected',
-                        'connection_id' => method_exists($event->connection, 'id') ? $event->connection->id() : null,
+                        'connection_id' => is_object($connection) && method_exists($connection, 'id') ? $connection->id() : null,
                     ]);
                 }
             });
@@ -340,7 +335,8 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 }
                 $pusherEvent = $payload['event'] ?? '';
                 $channel = $payload['data']['channel'] ?? $payload['channel'] ?? null;
-                $connectionIdVal = method_exists($event->connection, 'id') ? $event->connection->id() : null;
+                $connection = $event->connection ?? null;
+                $connectionIdVal = is_object($connection) && method_exists($connection, 'id') ? $connection->id() : null;
 
                 if ($pusherEvent === 'pusher:subscribe') {
                     $emitReverbEvent([
