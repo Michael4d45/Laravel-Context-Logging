@@ -23,6 +23,16 @@
     "suggest": {
         "doctrine/sql-formatter": "Optional; enables SQL syntax highlighting when running log:monitor"
     },
+    "archive": {
+        "exclude": [
+            "/.gitignore",
+            "/.phpunit.cache/",
+            "/.phpunit.result.cache",
+            "/composer.lock",
+            "/phpunit.xml",
+            "/tests/"
+        ]
+    },
     "autoload": {
         "psr-4": {
             "Michael4d45\\ContextLogging\\": "src/"
