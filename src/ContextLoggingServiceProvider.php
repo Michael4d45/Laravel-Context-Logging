@@ -525,12 +525,21 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         if (class_exists($notificationFailed)) {
             Event::listen($notificationFailed, function ($event) use ($store, $describeNotifiable): void {
+                $exception = null;
+
+                if (is_array($event->data ?? null) && array_key_exists('exception', $event->data)) {
+                    $failedException = $event->data['exception'];
+                    $exception = $failedException instanceof \Throwable
+                        ? $failedException->getMessage()
+                        : (is_scalar($failedException) ? (string) $failedException : null);
+                }
+
                 $store()->addEvent('error', 'notifications', [
                     'event' => 'NotificationFailed',
                     'channel' => $event->channel ?? null,
                     'notification' => is_object($event->notification) ? get_class($event->notification) : null,
                     'notifiable' => $describeNotifiable($event->notifiable ?? null),
-                    'exception' => $event->exception instanceof \Throwable ? $event->exception->getMessage() : null,
+                    'exception' => $exception,
                     'trace' => TraceHelper::getCollapsedTrace(),
                 ]);
             });
