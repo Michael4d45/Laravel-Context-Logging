@@ -142,6 +142,28 @@ class ContextStoreTest extends TestCase
     }
 
     #[Test]
+    public function it_tracks_emission_state_per_lifecycle()
+    {
+        $this->contextStore->initialize();
+
+        $this->assertTrue($this->contextStore->hasLifecycleStarted());
+        $this->assertFalse($this->contextStore->hasBeenEmitted());
+        $this->assertFalse($this->contextStore->isEmissionSuppressed());
+
+        $this->contextStore->markEmitted();
+        $this->contextStore->suppressEmission();
+
+        $this->assertTrue($this->contextStore->hasBeenEmitted());
+        $this->assertTrue($this->contextStore->isEmissionSuppressed());
+
+        $this->contextStore->clear();
+
+        $this->assertFalse($this->contextStore->hasLifecycleStarted());
+        $this->assertFalse($this->contextStore->hasBeenEmitted());
+        $this->assertFalse($this->contextStore->isEmissionSuppressed());
+    }
+
+    #[Test]
     public function it_tracks_outbound_http_calls()
     {
         $this->contextStore->initialize();

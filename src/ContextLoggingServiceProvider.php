@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Tinker\Console\TinkerCommand;
 use Michael4d45\ContextLogging\Support\TraceHelper;
 
 /**
@@ -80,11 +81,14 @@ class ContextLoggingServiceProvider extends ServiceProvider
         }
 
         if ($this->app->runningInConsole()) {
+            $this->overrideTinkerCommand();
             $this->bootConsoleContext();
             $this->commands([
                 Console\MonitorLogsCommand::class,
             ]);
         }
+
+        $this->registerShutdownFallback();
 
         $this->bootDatabaseLogging();
         $this->bootCacheLogging();
@@ -680,11 +684,48 @@ class ContextLoggingServiceProvider extends ServiceProvider
         });
     }
 
+    protected function registerShutdownFallback(): void
+    {
+        register_shutdown_function(function (): void {
+            if (!isset($this->app) || !$this->app->bound(ContextStore::class)) {
+                return;
+            }
+
+            $contextStore = $this->app->make(ContextStore::class);
+
+            if (
+                !$contextStore->hasLifecycleStarted()
+                || $contextStore->isEmissionSuppressed()
+                || $contextStore->hasBeenEmitted()
+            ) {
+                return;
+            }
+
+            ContextLogEmitter::emitInterruptedLifecycle($contextStore, error_get_last());
+            $contextStore->clear();
+        });
+    }
+
+    protected function overrideTinkerCommand(): void
+    {
+        if (!class_exists(TinkerCommand::class) || !$this->app->bound('command.tinker')) {
+            return;
+        }
+
+        $this->app->extend('command.tinker', function () {
+            return $this->app->make(Console\ContextLoggingTinkerCommand::class);
+        });
+    }
+
     /**
      * Whether the given artisan command should skip console context wrapping.
      */
     protected function shouldSkipConsoleCommand(string $command): bool
     {
+        if ($command === 'tinker') {
+            return true;
+        }
+
         $patterns = config('context-logging.console.skip_commands', []);
         foreach ($patterns as $pattern) {
             $pattern = trim((string) $pattern);

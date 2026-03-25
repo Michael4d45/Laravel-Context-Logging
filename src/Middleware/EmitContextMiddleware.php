@@ -39,6 +39,7 @@ class EmitContextMiddleware
     {
         // Completely skip emitting any log for ignored routes.
         if (LoggingHelper::shouldIgnoreRoute($request)) {
+            $this->contextStore->clear();
             return;
         }
 

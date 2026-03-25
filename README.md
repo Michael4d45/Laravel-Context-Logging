@@ -135,6 +135,16 @@ Logs that run **before** the request context is established are buffered and pro
 
 The same promotion behavior is used when console and queue lifecycles start, while long-lived lifecycle resets clear the store after emit so completed runs and jobs do not leak into the next one.
 
+### Interrupted requests and console runs
+
+If PHP exits before Laravel reaches its normal termination phase, the package now falls back to a shutdown handler. That means a request or console lifecycle can still emit its accumulated wide event when execution is interrupted by things like `dd()`, `exit`, or a fatal error.
+
+Fatal shutdowns add a `PHP fatal error` event automatically. Non-fatal interruptions still emit a synthetic interruption event when nothing else was logged, so abrupt exits are visible instead of disappearing.
+
+### Tinker behavior
+
+`artisan tinker` is treated differently from normal console commands. Instead of buffering one giant context until you leave the shell, each evaluated statement gets its own lifecycle and emits immediately after execution. That keeps Tinker logging usable without waiting for shell exit.
+
 ## Philosophy: Wide Events Only
 
 This package embraces **Wide Events** exclusively - no more scattered logs! Instead of emitting individual log entries throughout request processing, all logging calls are accumulated and emitted as a single comprehensive event at request completion.

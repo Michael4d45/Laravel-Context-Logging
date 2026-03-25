@@ -29,6 +29,10 @@ class RequestContextMiddleware
         // Promote any bootstrap-time events into the request lifecycle.
         $this->contextStore->initialize(true);
 
+        if (LoggingHelper::shouldIgnoreRoute($request)) {
+            $this->contextStore->suppressEmission();
+        }
+
         // Generate a unique request ID if not already present
         $requestId = $request->header('X-Request-ID') ?: (string) Str::uuid();
 

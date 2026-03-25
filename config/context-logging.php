@@ -93,7 +93,8 @@ return [
     | Commands listed here do not get wrapped in a single "Console run completed"
     | context log. Use for long-running workers (e.g. queue:work, horizon) so
     | each job/unit of work is logged separately instead of one giant entry.
-    | Supports Laravel wildcards (e.g. 'queue:*', 'horizon').
+    | Supports Laravel wildcards (e.g. 'queue:*', 'horizon'). Tinker is always
+    | skipped from command-wide wrapping so it can emit once per evaluation.
     |
     */
 

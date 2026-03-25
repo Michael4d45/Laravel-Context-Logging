@@ -52,4 +52,22 @@ class ConsoleLifecycleTest extends TestCase
         $this->assertSame([], $contextStore->getAllContext());
         $this->assertFalse($contextStore->hasEvents());
     }
+
+    #[Test]
+    public function it_skips_tinker_from_command_wide_console_wrapping(): void
+    {
+        $contextStore = $this->app->make(ContextStore::class);
+        $contextStore->addEvent('info', 'Console kernel booted');
+
+        $this->app['events']->dispatch(new CommandStarting(
+            'tinker',
+            new ArrayInput([]),
+            new BufferedOutput()
+        ));
+
+        $this->assertSame([], $contextStore->getEvents());
+        $this->assertSame([], $contextStore->getBufferedEvents());
+        $this->assertSame([], $contextStore->getAllContext());
+        $this->assertFalse($contextStore->hasLifecycleStarted());
+    }
 }

@@ -49,6 +49,16 @@ class ContextStore
      */
     protected bool $lifecycleStarted = false;
 
+    /**
+     * Whether the current lifecycle has already been emitted.
+     */
+    protected bool $emitted = false;
+
+    /**
+     * Whether emission should be suppressed for the current lifecycle.
+     */
+    protected bool $emissionSuppressed = false;
+
     public function __construct(
         protected ?HttpContextHookRunner $httpHookRunner = null,
         ?bool $httpEnabled = null,
@@ -71,6 +81,8 @@ class ContextStore
         $this->httpCalls = [];
         $this->startTime = microtime(true);
         $this->lifecycleStarted = true;
+        $this->emitted = false;
+        $this->emissionSuppressed = false;
     }
 
     /**
@@ -158,6 +170,46 @@ class ContextStore
     }
 
     /**
+     * Check whether a request/job/command lifecycle is active.
+     */
+    public function hasLifecycleStarted(): bool
+    {
+        return $this->lifecycleStarted;
+    }
+
+    /**
+     * Mark the current lifecycle as emitted.
+     */
+    public function markEmitted(): void
+    {
+        $this->emitted = true;
+    }
+
+    /**
+     * Determine whether the current lifecycle has already been emitted.
+     */
+    public function hasBeenEmitted(): bool
+    {
+        return $this->emitted;
+    }
+
+    /**
+     * Suppress or re-enable emission for the current lifecycle.
+     */
+    public function suppressEmission(bool $suppressed = true): void
+    {
+        $this->emissionSuppressed = $suppressed;
+    }
+
+    /**
+     * Determine whether emission is suppressed for the current lifecycle.
+     */
+    public function isEmissionSuppressed(): bool
+    {
+        return $this->emissionSuppressed;
+    }
+
+    /**
      * Finalize the context with request completion data.
      */
     public function finalize(?int $statusCode = null): void
@@ -230,6 +282,8 @@ class ContextStore
         $this->httpCalls = [];
         $this->startTime = null;
         $this->lifecycleStarted = false;
+        $this->emitted = false;
+        $this->emissionSuppressed = false;
     }
 
     /**
