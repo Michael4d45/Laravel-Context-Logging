@@ -299,54 +299,62 @@ class MonitorLogsCommand extends Command
     private function colorizeJsonLines(array $data, int $depth): array
     {
         $lines = [];
-        $indent = str_repeat($this->getJsonIndentUnit(), $depth);
+        $indentUnit = $this->getJsonIndentUnit();
+        $indent = str_repeat($indentUnit, $depth);
+        $childIndent = str_repeat($indentUnit, $depth + 1);
+
         $isList = !$this->isAssoc($data);
 
         if ($data === []) {
-            $lines[] = $indent . '<fg=gray>[]</>';
-
-            return $lines;
+            return [$indent . '<fg=gray>' . ($isList ? '[]' : '{}') . '</>'];
         }
 
-        $open = $isList ? '<fg=gray>[</>' : '<fg=gray>{</>';
-        $close = $isList ? '<fg=gray>]</>' : '<fg=gray>}</>';
-        $lines[] = $indent . $open;
+        $open = $isList ? '[' : '{';
+        $close = $isList ? ']' : '}';
 
-        $idx = 0;
-        $last = array_key_last($data);
+        $lines[] = $indent . "<fg=gray>{$open}</>";
+
+        $lastKey = array_key_last($data);
+
         foreach ($data as $key => $value) {
-            $isLast = ($key === $last);
+            $isLast = ($key === $lastKey);
             $comma = $isLast ? '' : '<fg=gray>,</>';
-            $innerIndent = str_repeat($this->getJsonIndentUnit(), $depth + 1);
 
             if ($isList) {
-                $valuePart = $this->colorizeJsonValue($value, $depth + 1);
-                if (is_array($valuePart)) {
-                    foreach ($valuePart as $nl) {
-                        $lines[] = $innerIndent . $nl;
+                $valueLines = $this->colorizeJsonValue($value, $depth + 1);
+
+                if (is_array($valueLines)) {
+                    foreach ($valueLines as $i => $line) {
+                        $lines[] = $line;
                     }
                     $lines[array_key_last($lines)] .= $comma;
                 } else {
-                    $lines[] = $innerIndent . $valuePart . $comma;
+                    $lines[] = $childIndent . $valueLines . $comma;
                 }
             } else {
                 $keyEsc = $this->escapeLine($this->escapeJsonString((string) $key));
                 $keyPart = '<fg=#e6db74>"' . $keyEsc . '"</><fg=gray>: </>';
-                $valuePart = $this->colorizeJsonValue($value, $depth + 1);
-                if (is_array($valuePart)) {
-                    $lines[] = $innerIndent . $keyPart . ltrim($valuePart[0]);
-                    foreach (array_slice($valuePart, 1) as $nl) {
-                        $lines[] = $innerIndent . $nl;
+
+                $valueLines = $this->colorizeJsonValue($value, $depth + 1);
+
+                if (is_array($valueLines)) {
+                    // First line attaches to key
+                    $first = array_shift($valueLines);
+                    $lines[] = $childIndent . $keyPart . ltrim($first);
+
+                    // Remaining lines already correctly indented
+                    foreach ($valueLines as $line) {
+                        $lines[] = $line;
                     }
+
                     $lines[array_key_last($lines)] .= $comma;
                 } else {
-                    $lines[] = $innerIndent . $keyPart . $valuePart . $comma;
+                    $lines[] = $childIndent . $keyPart . $valueLines . $comma;
                 }
             }
-            $idx++;
         }
 
-        $lines[] = $indent . $close;
+        $lines[] = $indent . "<fg=gray>{$close}</>";
 
         return $lines;
     }
@@ -359,23 +367,25 @@ class MonitorLogsCommand extends Command
         if (is_array($value)) {
             return $this->colorizeJsonLines($value, $depth);
         }
+
         if (is_string($value)) {
             $esc = $this->escapeLine($this->escapeJsonString($value));
-
             return '<fg=#e6db74>"</><fg=#a6e22e>' . $esc . '</><fg=#e6db74>"</>';
         }
+
         if (is_int($value) || is_float($value)) {
             return '<fg=#ae81ff>' . (string) $value . '</>';
         }
+
         if (is_bool($value)) {
             return '<fg=#ae81ff>' . ($value ? 'true' : 'false') . '</>';
         }
+
         if ($value === null) {
             return '<fg=gray>null</>';
         }
 
         $encoded = json_encode($value);
-
         return $encoded !== false ? $this->escapeLine($encoded) : '<fg=gray>null</>';
     }
 
@@ -396,23 +406,10 @@ class MonitorLogsCommand extends Command
 
         return str_repeat(' ', $this->jsonIndentSpaces);
     }
-    
-    /**
-     * Render a line with a visual prefix (e.g. "  <fg=...>│</>") without letting
-     * trailing spaces in the prefix distort the content indentation.
-     */
+
     protected function renderPrefixedLine(string $prefix, string $line): string
     {
-        // Remove trailing spaces from prefix so it doesn't affect indent
-        $prefix = rtrim($prefix);
-
-        // Extract leading spaces from the content line (these are the real indent)
-        preg_match('/^(\s*)(.*)$/', $line, $m);
-        $indent = $m[1] ?? '';
-        $content = $m[2] ?? $line;
-
-        // Apply exactly ONE space after the prefix, then the controlled indent and content
-        return $prefix . ' ' . $indent . $content;
+        return rtrim($prefix) . ' ' . $line;
     }
 
     /**
