@@ -15,7 +15,8 @@ class MonitorLogsCommand extends Command
                             {file? : The path to the log file to monitor}
                             {--lines=0 : Number of recent lines to read on start (0 = tail only)}
                             {--threshold=50 : Skip batch if new lines exceed this (0 = no limit)}
-                            {--auto-truncate= : Max size before truncating to half (e.g. 10MB, 1GB)}';
+                            {--auto-truncate= : Max size before truncating to half (e.g. 10MB, 1GB)}
+                            {--json-indent=2 : Number of spaces per JSON indent level (0 = compact)}';
 
     /**
      * The console command description.
@@ -29,10 +30,21 @@ class MonitorLogsCommand extends Command
     /** @var int|null Max size in bytes; when file exceeds this, truncate to half (null = disabled) */
     protected ?int $autoTruncateBytes = null;
 
+    /** @var int Number of spaces to use for JSON indentation per level */
+    protected int $jsonIndentSpaces = 2;
+
     public function handle(): int
     {
         $file = $this->argument('file') ?? storage_path('logs/laravel.log');
         $this->skipThreshold = (int) $this->option('threshold');
+        $jsonIndentOpt = $this->option('json-indent');
+        $validatedIndent = filter_var($jsonIndentOpt, FILTER_VALIDATE_INT);
+        if ($validatedIndent === false || $validatedIndent < 0) {
+            $this->error("Invalid --json-indent value: '{$jsonIndentOpt}'. Must be a non-negative integer.");
+
+            return self::FAILURE;
+        }
+        $this->jsonIndentSpaces = (int) $validatedIndent;
         $autoTruncate = $this->option('auto-truncate');
         if ($autoTruncate !== null && $autoTruncate !== '') {
             $this->autoTruncateBytes = $this->parseSizeToBytes((string) $autoTruncate);
@@ -287,7 +299,7 @@ class MonitorLogsCommand extends Command
     private function colorizeJsonLines(array $data, int $depth): array
     {
         $lines = [];
-        $indent = str_repeat('  ', $depth);
+        $indent = str_repeat($this->getJsonIndentUnit(), $depth);
         $isList = !$this->isAssoc($data);
 
         if ($data === []) {
@@ -305,7 +317,7 @@ class MonitorLogsCommand extends Command
         foreach ($data as $key => $value) {
             $isLast = ($key === $last);
             $comma = $isLast ? '' : '<fg=gray>,</>';
-            $innerIndent = str_repeat('  ', $depth + 1);
+            $innerIndent = str_repeat($this->getJsonIndentUnit(), $depth + 1);
 
             if ($isList) {
                 $valuePart = $this->colorizeJsonValue($value, $depth + 1);
@@ -374,6 +386,15 @@ class MonitorLogsCommand extends Command
             ['\\\\', '\\"', '\\n', '\\r', '\\t'],
             $s
         );
+    }
+
+    private function getJsonIndentUnit(): string
+    {
+        if ($this->jsonIndentSpaces <= 0) {
+            return '';
+        }
+
+        return str_repeat(' ', $this->jsonIndentSpaces);
     }
 
     /**
@@ -832,7 +853,7 @@ class MonitorLogsCommand extends Command
      */
     protected function formatNestedArray(string $prefix, array $data, int $depth = 0): void
     {
-        $indent = str_repeat('  ', $depth);
+        $indent = str_repeat($this->getJsonIndentUnit(), $depth);
         foreach ($data as $key => $value) {
             $keyPart = '<fg=#eab308>' . $this->escapeLine((string) $key) . '</>: ';
             if (is_array($value) && !$this->isAssoc($value)) {
