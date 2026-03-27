@@ -3,6 +3,9 @@
 namespace Michael4d45\ContextLogging;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Http\Client\Response as ClientResponse;
 
 /**
  * Handles outbound HTTP request/response context capture.
@@ -10,8 +13,6 @@ use Illuminate\Support\Facades\Http;
 class HttpClientInstrumentation
 {
     protected bool $registered = false;
-
-    protected int $syncedRecordedCalls = 0;
 
     public function __construct(
         protected ContextStore $contextStore,
@@ -28,79 +29,74 @@ class HttpClientInstrumentation
 
         $this->registered = true;
 
-        Http::record();
-    }
+        // Attach middleware to capture request/response timestamps as close to the actual call as possible.
+        Http::globalMiddleware(function (callable $handler) {
+            return function ($request, array $options) use ($handler) {
+                $requestStart = microtime(true);
 
-    /**
-     * Synchronize newly recorded HTTP request/response pairs into the context store.
-     */
-    public function syncRecordedCalls(): void
-    {
-        if (!$this->contextStore->isHttpEnabled()) {
-            return;
-        }
+                $clientRequest = new ClientRequest($request);
+                $url = $clientRequest->url();
+                $urlParts = $this->extractUrlParts($url);
 
-        $recorded = Http::recorded()->values();
-
-        if ($recorded->isEmpty() || $this->syncedRecordedCalls >= $recorded->count()) {
-            return;
-        }
-
-        for ($i = $this->syncedRecordedCalls; $i < $recorded->count(); $i++) {
-            [$request, $response] = $recorded[$i];
-
-            $url = $request->url();
-            $urlParts = $this->extractUrlParts($url);
-
-            $requestData = [
-                'method' => $request->method(),
-                'url' => $url,
-                'path' => $urlParts['path'],
-                'query_params' => $this->maskSensitiveQueryParams($urlParts['query_params']),
-            ];
-
-            if ((bool) config('context-logging.http.capture_headers', false)) {
-                $requestData['headers'] = $this->normalizeHeaders($request->headers());
-            }
-
-            if ((bool) config('context-logging.http.capture_body', false)) {
-                $body = $request->body();
-
-                if ($body !== null) {
-                    $requestData['body'] = $this->decodeAndMaskJsonBody(
-                        $request->header('Content-Type'),
-                        $body
-                    );
-                }
-            }
-
-            $httpCallId = $this->contextStore->beginHttpCall($requestData);
-
-            if ($response !== null) {
-                $responseData = [
-                    'status' => $response->status(),
+                $requestData = [
+                    'method' => $clientRequest->method(),
+                    'url' => $url,
+                    'path' => $urlParts['path'],
+                    'query_params' => $this->maskSensitiveQueryParams($urlParts['query_params']),
+                    'timestamp' => $requestStart,
                 ];
 
                 if ((bool) config('context-logging.http.capture_headers', false)) {
-                    $responseData['headers'] = $response->headers();
+                    $requestData['headers'] = $this->normalizeHeaders($clientRequest->headers());
                 }
 
                 if ((bool) config('context-logging.http.capture_body', false)) {
-                    $body = $response->body();
+                    $body = $clientRequest->body();
 
                     if ($body !== null) {
-                        $responseData['body'] = $this->decodeAndMaskJsonBody(
-                            [$response->header('Content-Type')],
+                        $requestData['body'] = $this->decodeAndMaskJsonBody(
+                            $clientRequest->header('Content-Type'),
                             $body
                         );
                     }
                 }
 
-                $this->contextStore->completeHttpCall($httpCallId, $responseData);
-            }
-        }
+                $httpCallId = $this->contextStore->beginHttpCall($requestData);
 
-        $this->syncedRecordedCalls = $recorded->count();
+                $options['context']['context_logging_http_call_id'] = $httpCallId;
+
+                $promise = $handler($request, $options);
+
+                return $promise->then(function ($response) use ($httpCallId) {
+                    $responseTs = microtime(true);
+
+                    $clientResponse = new ClientResponse($response);
+                    $responseData = [
+                        'status' => $clientResponse->status(),
+                        'timestamp' => $responseTs,
+                    ];
+
+                    if ((bool) config('context-logging.http.capture_headers', false)) {
+                        $responseData['headers'] = $clientResponse->headers();
+                    }
+
+                    if ((bool) config('context-logging.http.capture_body', false)) {
+                        $body = $clientResponse->body();
+
+                        if ($body !== null) {
+                            $responseData['body'] = $this->decodeAndMaskJsonBody(
+                                [$clientResponse->header('Content-Type')],
+                                $body
+                            );
+                        }
+                    }
+
+                    $this->contextStore->completeHttpCall($httpCallId, $responseData);
+
+                    return $response;
+                });
+            };
+        });
     }
 
     /**

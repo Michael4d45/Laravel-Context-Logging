@@ -827,6 +827,7 @@ class MonitorLogsCommand extends Command
         $response = $context['response'] ?? null;
 
         $this->line('  <fg=#0d9488>┌─ <options=bold>HTTP Call</></>');
+
         if (is_array($request) && isset($request['url'])) {
             $method = $request['method'] ?? 'GET';
             $reqUrl = (string) $request['url'];
@@ -836,6 +837,21 @@ class MonitorLogsCommand extends Command
                 $this->formatUrl($reqUrl, '#0d9488');
             }
         }
+
+        // Request headers/body
+        if (is_array($request)) {
+            $requestHeaders = $request['headers'] ?? [];
+            if (is_array($requestHeaders) && $requestHeaders !== []) {
+                $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Request Headers:</>'));
+                $this->formatNestedArray('  <fg=#0d9488>│</>', $this->flattenHeaders($requestHeaders));
+            }
+
+            if (array_key_exists('body', $request) && $request['body'] !== null && $request['body'] !== '') {
+                $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Request Body:</>'));
+                $this->renderBodyContent($request['body'], '  <fg=#0d9488>│</>');
+            }
+        }
+
         if (is_array($response)) {
             $status = $response['status_code'] ?? $response['status'] ?? null;
             $duration = $response['duration_ms'] ?? null;
@@ -847,8 +863,49 @@ class MonitorLogsCommand extends Command
             if ($duration !== null) {
                 $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308>Duration:</> <fg=#22c55e>' . $this->escapeLine((string) $duration) . 'ms</>'));
             }
+
+            $responseHeaders = $response['headers'] ?? [];
+            if (is_array($responseHeaders) && $responseHeaders !== []) {
+                $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Response Headers:</>'));
+                $this->formatNestedArray('  <fg=#0d9488>│</>', $this->flattenHeaders($responseHeaders));
+            }
+
+            if (array_key_exists('body', $response) && $response['body'] !== null && $response['body'] !== '') {
+                $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Response Body:</>'));
+                $this->renderBodyContent($response['body'], '  <fg=#0d9488>│</>');
+            }
         }
+
         $this->line('  <fg=#0d9488>└─</>');
+    }
+
+    /**
+     * Output request/response body content with fallback formatting.
+     * @param mixed $body
+     */
+    protected function renderBodyContent(mixed $body, string $prefix): void
+    {
+        if (is_array($body)) {
+            $this->outputColorizedJson($this->colorizeJson($body), $prefix);
+            return;
+        }
+
+        if (is_string($body)) {
+            $decoded = json_decode($body, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $this->outputColorizedJson($this->colorizeJson($decoded), $prefix);
+                return;
+            }
+
+            $preview = mb_strlen($body) > 500 ? mb_substr($body, 0, 500) . '…' : $body;
+            foreach (explode("\n", $preview) as $line) {
+                $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine($line) . '</>'));
+            }
+            return;
+        }
+
+        $display = is_scalar($body) ? (string) $body : json_encode($body);
+        $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine((string) $display) . '</>'));
     }
 
     /**

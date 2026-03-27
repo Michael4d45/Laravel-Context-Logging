@@ -298,7 +298,7 @@ class ContextStore
         $id = (string) Str::uuid();
 
         $normalizedRequest = array_merge($request, [
-            'timestamp' => microtime(true),
+            'timestamp' => $request['timestamp'] ?? microtime(true),
         ]);
 
         if ($this->httpHookRunner !== null) {
@@ -355,7 +355,7 @@ class ContextStore
         }
 
         $normalizedResponse = array_merge($response, [
-            'timestamp' => microtime(true),
+            'timestamp' => $response['timestamp'] ?? microtime(true),
         ]);
 
         $requestTimestamp = $this->httpCalls[$id]['request']['timestamp'] ?? null;
@@ -382,10 +382,6 @@ class ContextStore
      */
     public function getHttpCalls(): array
     {
-        if (function_exists('app')) {
-            app(HttpClientInstrumentation::class)->syncRecordedCalls();
-        }
-
         return array_values($this->httpCalls);
     }
 }
