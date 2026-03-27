@@ -43,17 +43,17 @@ class ContextLoggingServiceProvider extends ServiceProvider
             return new HttpContextHookRunner();
         });
 
-        $this->app->singleton(HttpClientInstrumentation::class, function ($app) {
-            return new HttpClientInstrumentation(
-                $app->make(ContextStore::class),
-            );
-        });
-
         // Register the ContextStore as a request-scoped singleton
         $this->app->singleton(ContextStore::class, function ($app) {
             return new ContextStore(
                 $app->make(HttpContextHookRunner::class),
                 (bool) $app['config']->get('context-logging.http.enabled', true),
+            );
+        });
+
+        $this->app->singleton(HttpClientInstrumentation::class, function ($app) {
+            return new HttpClientInstrumentation(
+                $app->make(ContextStore::class),
             );
         });
 
