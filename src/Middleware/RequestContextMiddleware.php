@@ -26,7 +26,7 @@ class RequestContextMiddleware
      */
     public function handle(Request $request, Closure $next)
     {
-        // Promote any bootstrap-time events into the request lifecycle.
+        // Merge buffered web-only pre-lifecycle events (e.g. route files, channels) into this request.
         $this->contextStore->initialize(true);
 
         if (LoggingHelper::shouldIgnoreRoute($request)) {

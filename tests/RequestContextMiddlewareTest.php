@@ -11,10 +11,19 @@ use Symfony\Component\HttpFoundation\Response;
 class RequestContextMiddlewareTest extends TestCase
 {
     #[Test]
-    public function it_promotes_buffered_events_into_the_request_context(): void
+    public function it_promotes_buffered_pre_middleware_events_into_the_request_context(): void
     {
-        $contextStore = new ContextStore();
+        // Subclass simulates HTTP (pre-lifecycle buffering); PHPUnit runs in the console so the default store would emit standalone.
+        $contextStore = new class extends ContextStore {
+            protected function shouldBufferPreLifecycleEvents(): bool
+            {
+                return true;
+            }
+        };
+
         $contextStore->addEvent('info', 'Broadcasting channels loaded');
+
+        $this->assertCount(1, $contextStore->getBufferedEvents());
 
         $middleware = new RequestContextMiddleware($contextStore);
         $request = Request::create('https://example.test/broadcasting/auth?socket_id=123', 'POST');

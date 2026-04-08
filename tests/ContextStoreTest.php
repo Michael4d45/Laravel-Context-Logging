@@ -10,10 +10,32 @@ class ContextStoreTest extends TestCase
 {
     protected ContextStore $contextStore;
 
+    protected string $logFile = '';
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->contextStore = new ContextStore();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->logFile !== '' && is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
+
+        parent::tearDown();
+    }
+
+    protected function configureSingleLogToTempFile(): void
+    {
+        $this->logFile = tempnam(sys_get_temp_dir(), 'context-store-test-');
+        config()->set('logging.default', 'single');
+        config()->set('logging.channels.single', [
+            'driver' => 'single',
+            'path' => $this->logFile,
+            'replace_placeholders' => true,
+        ]);
     }
 
     #[Test]
@@ -49,37 +71,51 @@ class ContextStoreTest extends TestCase
     }
 
     #[Test]
-    public function it_buffers_events_before_a_lifecycle_starts()
+    public function it_emits_standalone_events_when_no_lifecycle_is_active()
     {
+        $this->configureSingleLogToTempFile();
+
         $this->contextStore->addEvent('info', 'Framework booted');
-
-        $this->assertSame([], $this->contextStore->getEvents());
-        $this->assertCount(1, $this->contextStore->getBufferedEvents());
-        $this->assertTrue($this->contextStore->hasEvents());
-    }
-
-    #[Test]
-    public function it_can_promote_buffered_events_into_a_new_lifecycle()
-    {
-        $this->contextStore->addEvent('info', 'Framework booted');
-
-        $this->contextStore->initialize(true);
-
-        $this->assertCount(1, $this->contextStore->getEvents());
-        $this->assertSame([], $this->contextStore->getBufferedEvents());
-        $this->assertSame('Framework booted', $this->contextStore->getEvents()[0]['message']);
-    }
-
-    #[Test]
-    public function it_discards_buffered_events_when_a_lifecycle_starts_without_promotion()
-    {
-        $this->contextStore->addEvent('info', 'Framework booted');
-
-        $this->contextStore->initialize();
 
         $this->assertSame([], $this->contextStore->getEvents());
         $this->assertSame([], $this->contextStore->getBufferedEvents());
         $this->assertFalse($this->contextStore->hasEvents());
+        $this->assertStringContainsString('Framework booted', file_get_contents($this->logFile) ?: '');
+    }
+
+    #[Test]
+    public function it_starts_a_lifecycle_without_carrying_pre_lifecycle_events()
+    {
+        $this->configureSingleLogToTempFile();
+
+        $this->contextStore->addEvent('info', 'Framework booted');
+
+        $this->contextStore->initialize();
+
+        $this->assertCount(0, $this->contextStore->getEvents());
+        $this->assertSame([], $this->contextStore->getBufferedEvents());
+        $this->assertStringContainsString('Framework booted', file_get_contents($this->logFile) ?: '');
+    }
+
+    #[Test]
+    public function it_buffers_pre_lifecycle_events_when_configured_like_http_and_promotes_on_initialize(): void
+    {
+        $store = new class extends ContextStore {
+            protected function shouldBufferPreLifecycleEvents(): bool
+            {
+                return true;
+            }
+        };
+
+        $store->addEvent('info', 'channels.php');
+
+        $this->assertCount(1, $store->getBufferedEvents());
+
+        $store->initialize(true);
+
+        $this->assertSame([], $store->getBufferedEvents());
+        $this->assertCount(1, $store->getEvents());
+        $this->assertSame('channels.php', $store->getEvents()[0]['message']);
     }
 
     #[Test]
@@ -126,13 +162,16 @@ class ContextStoreTest extends TestCase
     #[Test]
     public function it_can_be_cleared()
     {
+        $this->configureSingleLogToTempFile();
+
         $this->contextStore->initialize();
         $this->contextStore->addContext('test', 'value');
         $this->contextStore->addEvent('info', 'test message');
         $this->contextStore->clear();
         $this->contextStore->addEvent('info', 'buffered message');
 
-        $this->assertCount(1, $this->contextStore->getBufferedEvents());
+        $this->assertSame([], $this->contextStore->getBufferedEvents());
+        $this->assertStringContainsString('buffered message', file_get_contents($this->logFile) ?: '');
 
         $this->contextStore->clear();
 

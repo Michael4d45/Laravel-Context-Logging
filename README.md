@@ -131,9 +131,12 @@ Log calls become **annotations** that are collected into comprehensive wide even
 
 ### Bootstrap and early log calls
 
-Logs that run **before** the request context is established are buffered and promoted into the next lifecycle that starts. For HTTP, that means any `Log::info()` (or other level) written during bootstrap, such as in `routes/channels.php`, in a service provider, or while `Broadcast::channel()` definitions are loaded, will be included in the eventual request-wide event instead of being discarded when `RequestContextMiddleware` initializes the store.
+Pre-lifecycle behavior is split by **how PHP is running**:
 
-The same promotion behavior is used when console and queue lifecycles start, while long-lived lifecycle resets clear the store after emit so completed runs and jobs do not leak into the next one.
+- **HTTP (not `runningInConsole()`)**: Instrumentation and `Log::` calls before `RequestContextMiddleware` (e.g. `routes/channels.php`, providers) are **buffered** and **merged** into the request-wide log when the middleware starts the lifecycle—same idea as before.
+- **Console (queue workers, Artisan, PHPUnit, etc.)**: Pre-lifecycle events are **emitted immediately** as standalone structured lines so nothing piles up in memory or gets stapled onto the wrong job or command.
+
+Once a lifecycle has started, annotations accumulate only until that request/job/command completes. Long-lived lifecycles clear the store after emit so completed runs and jobs do not leak into the next one.
 
 ### Interrupted requests and console runs
 

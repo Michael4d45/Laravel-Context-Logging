@@ -52,6 +52,25 @@ class ContextLogEmitter
     }
 
     /**
+     * Emit a single event immediately when no request/job/command lifecycle is active.
+     *
+     * Used so cache, SQL, etc. are logged as they happen instead of accumulating
+     * until the next lifecycle (e.g. queue worker idle polling).
+     *
+     * @param  array{level: string, message: string, context: array, timestamp: float}  $event
+     */
+    public static function emitStandaloneEvent(array $event): void
+    {
+        $payload = [
+            'context' => [],
+            'events' => [$event],
+        ];
+
+        $originalLogManager = new LogManager(app());
+        $originalLogManager->log($event['level'], $event['message'], $payload);
+    }
+
+    /**
      * Emit the current lifecycle during shutdown when normal termination did not run.
      *
      * @param array<string, mixed>|null $lastError

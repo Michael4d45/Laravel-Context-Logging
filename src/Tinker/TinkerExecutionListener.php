@@ -27,7 +27,7 @@ class TinkerExecutionListener extends AbstractListener
         }
 
         $this->executionActive = true;
-        $this->contextStore->initialize(true);
+        $this->contextStore->initialize();
         $this->contextStore->addContexts([
             'run_id' => (string) \Illuminate\Support\Str::uuid(),
             'timestamp' => now()->toISOString(),

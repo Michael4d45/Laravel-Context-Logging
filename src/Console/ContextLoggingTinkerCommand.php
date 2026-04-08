@@ -50,7 +50,7 @@ class ContextLoggingTinkerCommand extends TinkerCommand
 
         if ($code = $this->option('execute')) {
             try {
-                $contextStore->initialize(true);
+                $contextStore->initialize();
                 $contextStore->addContexts([
                     'run_id' => (string) \Illuminate\Support\Str::uuid(),
                     'timestamp' => now()->toISOString(),

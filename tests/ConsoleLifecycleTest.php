@@ -10,16 +10,37 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 class ConsoleLifecycleTest extends TestCase
 {
+    protected string $logFile = '';
+
     protected function getEnvironmentSetUp($app): void
     {
         $app['config']->set('context-logging.log.console', true);
     }
 
-    #[Test]
-    public function it_promotes_buffered_events_when_a_console_command_starts(): void
+    protected function tearDown(): void
     {
+        if ($this->logFile !== '' && is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
+
+        parent::tearDown();
+    }
+
+    #[Test]
+    public function it_emits_pre_command_events_standalone_and_starts_console_context_without_them(): void
+    {
+        $this->logFile = tempnam(sys_get_temp_dir(), 'console-lifecycle-test-');
+        config()->set('logging.default', 'single');
+        config()->set('logging.channels.single', [
+            'driver' => 'single',
+            'path' => $this->logFile,
+            'replace_placeholders' => true,
+        ]);
+
         $contextStore = $this->app->make(ContextStore::class);
         $contextStore->addEvent('info', 'Console kernel booted');
+
+        $this->assertStringContainsString('Console kernel booted', file_get_contents($this->logFile) ?: '');
 
         $this->app['events']->dispatch(new CommandStarting(
             'demo:run',
@@ -28,8 +49,7 @@ class ConsoleLifecycleTest extends TestCase
         ));
 
         $this->assertSame('demo:run', $contextStore->getContext('command'));
-        $this->assertCount(1, $contextStore->getEvents());
-        $this->assertSame('Console kernel booted', $contextStore->getEvents()[0]['message']);
+        $this->assertCount(0, $contextStore->getEvents());
         $this->assertSame([], $contextStore->getBufferedEvents());
     }
 

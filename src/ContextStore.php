@@ -7,8 +7,11 @@ use Illuminate\Support\Str;
 /**
  * Context Store for accumulating request-wide metadata and log events.
  *
- * This is a request-scoped singleton that accumulates contextual information
- * throughout a request's lifecycle and provides a final structured payload.
+ * This is a process-wide singleton that accumulates contextual information for an
+ * active HTTP / job / console lifecycle. Pre-lifecycle events are either buffered
+ * until the HTTP request lifecycle starts (typical web SAPI) or emitted immediately
+ * when running in the console (queue workers, Artisan, PHPUnit) so idle work is not
+ * merged into unrelated lifecycles.
  */
 class ContextStore
 {
@@ -23,9 +26,16 @@ class ContextStore
     protected array $events = [];
 
     /**
-     * Events captured before a lifecycle context is initialized.
+     * Events recorded before a lifecycle exists: buffered for HTTP, or pending drain as standalone logs in the console.
+     *
+     * @var list<array{level: string, message: string, context: array, timestamp: float}>
      */
-    protected array $bufferedEvents = [];
+    protected array $preLifecycleQueue = [];
+
+    /**
+     * True while draining {@see $preLifecycleQueue} so nested addEvent appends to the queue.
+     */
+    protected bool $drainingPreLifecycle = false;
 
     /**
      * Start timestamp for duration calculation.
@@ -69,15 +79,23 @@ class ContextStore
     }
 
     /**
-     * Initialize the context store for a new request.
+     * Initialize the context store for a new request, job, or command lifecycle.
+     *
+     * @param  bool  $promotePreLifecycleEvents  When true (HTTP middleware), move buffered pre-lifecycle events into this lifecycle. When false, emit any queued events as standalone logs first, then start with an empty event list.
      */
-    public function initialize(bool $promoteBufferedEvents = false): void
+    public function initialize(bool $promotePreLifecycleEvents = false): void
     {
-        $promotedEvents = $promoteBufferedEvents ? $this->bufferedEvents : [];
+        if ($promotePreLifecycleEvents) {
+            $this->events = $this->preLifecycleQueue;
+            $this->preLifecycleQueue = [];
+        } else {
+            if ($this->preLifecycleQueue !== []) {
+                $this->drainPreLifecycleQueue();
+            }
+            $this->events = [];
+        }
 
         $this->context = [];
-        $this->events = $promotedEvents;
-        $this->bufferedEvents = [];
         $this->httpCalls = [];
         $this->startTime = microtime(true);
         $this->lifecycleStarted = true;
@@ -142,7 +160,48 @@ class ContextStore
             return;
         }
 
-        $this->bufferedEvents[] = $event;
+        $this->preLifecycleQueue[] = $event;
+
+        if ($this->shouldBufferPreLifecycleEvents()) {
+            return;
+        }
+
+        if (!$this->drainingPreLifecycle) {
+            $this->drainPreLifecycleQueue();
+        }
+    }
+
+    /**
+     * Web requests buffer pre-lifecycle instrumentation so it can merge into the request-wide log.
+     * Console processes (queue, Artisan, tests) emit immediately so unrelated activity is not deferred.
+     */
+    protected function shouldBufferPreLifecycleEvents(): bool
+    {
+        if (!function_exists('app')) {
+            return false;
+        }
+
+        try {
+            return !app()->runningInConsole();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @internal
+     */
+    protected function drainPreLifecycleQueue(): void
+    {
+        $this->drainingPreLifecycle = true;
+        try {
+            while ($this->preLifecycleQueue !== []) {
+                $next = array_shift($this->preLifecycleQueue);
+                ContextLogEmitter::emitStandaloneEvent($next);
+            }
+        } finally {
+            $this->drainingPreLifecycle = false;
+        }
     }
 
     /**
@@ -154,11 +213,13 @@ class ContextStore
     }
 
     /**
-     * Get events captured before lifecycle initialization.
+     * Get events queued before lifecycle initialization (HTTP buffer until middleware runs).
+     *
+     * @return list<array{level: string, message: string, context: array, timestamp: float}>
      */
     public function getBufferedEvents(): array
     {
-        return $this->bufferedEvents;
+        return $this->preLifecycleQueue;
     }
 
     /**
@@ -166,7 +227,7 @@ class ContextStore
      */
     public function hasEvents(): bool
     {
-        return !empty($this->events) || !empty($this->bufferedEvents);
+        return $this->events !== [] || $this->preLifecycleQueue !== [];
     }
 
     /**
@@ -278,7 +339,7 @@ class ContextStore
     {
         $this->context = [];
         $this->events = [];
-        $this->bufferedEvents = [];
+        $this->preLifecycleQueue = [];
         $this->httpCalls = [];
         $this->startTime = null;
         $this->lifecycleStarted = false;

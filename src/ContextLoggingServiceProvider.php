@@ -173,7 +173,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         Event::listen(JobProcessing::class, function (JobProcessing $event) use ($store, $trace): void {
             $contextStore = $store();
-            $contextStore->initialize(true);
+            $contextStore->initialize();
             $jobId = method_exists($event->job, 'getJobId') ? $event->job->getJobId() : null;
             $contextStore->addContexts([
                 'job_id' => $jobId,
@@ -665,7 +665,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
                     return;
                 }
                 $skipEmit[0] = false;
-                $contextStore->initialize(true);
+                $contextStore->initialize();
                 $contextStore->addContexts([
                     'run_id' => (string) Str::uuid(),
                     'timestamp' => now()->toISOString(),
