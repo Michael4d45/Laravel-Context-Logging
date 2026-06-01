@@ -16,7 +16,8 @@ use Michael4d45\ContextLogging\LoggingHelper;
  *
  * Finalizes request context, computes duration, and emits a single structured log entry.
  * When response/user logging is enabled, adds User and/or Outgoing Response events.
- * Ensures at least one event when request or response logging is on so the log is emitted.
+ * Ensures at least one event so the lifecycle is marked emitted and the shutdown
+ * fallback does not log a false "Request interrupted" entry.
  */
 class EmitContextMiddleware
 {
@@ -80,7 +81,7 @@ class EmitContextMiddleware
             $this->contextStore->addEvent('info', 'Outgoing Response', $log);
         }
 
-        if (($logRequest || $logResponse) && !$this->contextStore->hasEvents()) {
+        if (!$this->contextStore->hasEvents()) {
             $this->contextStore->addEvent('info', 'Request completed', []);
         }
 

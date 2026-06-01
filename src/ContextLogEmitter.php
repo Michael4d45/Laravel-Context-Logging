@@ -30,6 +30,8 @@ class ContextLogEmitter
         $contextStore->finalize($statusCode);
 
         if (!$contextStore->hasEvents()) {
+            $contextStore->markEmitted();
+
             return;
         }
 

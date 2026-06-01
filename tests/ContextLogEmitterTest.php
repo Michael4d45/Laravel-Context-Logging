@@ -72,4 +72,32 @@ class ContextLogEmitterTest extends TestCase
         $this->assertStringContainsString('PHP fatal error', $contents);
         $this->assertStringContainsString('undefined function boom', $contents);
     }
+
+    #[Test]
+    public function it_does_not_emit_interrupted_after_successful_emit_with_a_completion_event(): void
+    {
+        config()->set('context-logging.log.request', false);
+        config()->set('context-logging.log.response', false);
+        config()->set('context-logging.log.user', false);
+
+        $contextStore = $this->app->make(ContextStore::class);
+        $contextStore->initialize();
+        $contextStore->addContexts([
+            'method' => 'POST',
+            'path' => 'api/example',
+        ]);
+
+        if (!$contextStore->hasEvents()) {
+            $contextStore->addEvent('info', 'Request completed', []);
+        }
+
+        ContextLogEmitter::emit($contextStore, 200, 'Request completed');
+
+        ContextLogEmitter::emitInterruptedLifecycle($contextStore);
+
+        $contents = file_get_contents($this->logFile) ?: '';
+
+        $this->assertStringContainsString('Request completed', $contents);
+        $this->assertStringNotContainsString('Request interrupted', $contents);
+    }
 }
