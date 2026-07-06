@@ -105,4 +105,20 @@ return [
         )),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | log:monitor Display
+    |--------------------------------------------------------------------------
+    |
+    | Character limits for request/response bodies shown by the log:monitor
+    | command. 0 = no limit. CLI options --request-body-limit and
+    | --response-body-limit override these values when provided.
+    |
+    */
+
+    'monitor' => [
+        'request_body_limit' => (int) env('CONTEXT_LOG_MONITOR_REQUEST_BODY_LIMIT', 0),
+        'response_body_limit' => (int) env('CONTEXT_LOG_MONITOR_RESPONSE_BODY_LIMIT', 0),
+    ],
+
 ];

@@ -16,7 +16,9 @@ class MonitorLogsCommand extends Command
                             {--lines=0 : Number of recent lines to read on start (0 = tail only)}
                             {--threshold=50 : Skip batch if new lines exceed this (0 = no limit)}
                             {--auto-truncate= : Max size before truncating to half (e.g. 10MB, 1GB)}
-                            {--json-indent=2 : Number of spaces per JSON indent level (0 = compact)}';
+                            {--json-indent=2 : Number of spaces per JSON indent level (0 = compact)}
+                            {--request-body-limit= : Max characters to display for request bodies (0 = no limit)}
+                            {--response-body-limit= : Max characters to display for response bodies (0 = no limit)}';
 
     /**
      * The console command description.
@@ -33,6 +35,12 @@ class MonitorLogsCommand extends Command
     /** @var int Number of spaces to use for JSON indentation per level */
     protected int $jsonIndentSpaces = 2;
 
+    /** @var int Max characters to display for request bodies (0 = no limit) */
+    protected int $requestBodyCharLimit = 0;
+
+    /** @var int Max characters to display for response bodies (0 = no limit) */
+    protected int $responseBodyCharLimit = 0;
+
     public function handle(): int
     {
         $file = $this->argument('file') ?? storage_path('logs/laravel.log');
@@ -45,6 +53,27 @@ class MonitorLogsCommand extends Command
             return self::FAILURE;
         }
         $this->jsonIndentSpaces = (int) $validatedIndent;
+
+        $requestBodyLimit = $this->resolveBodyCharLimitOption(
+            'request-body-limit',
+            'context-logging.monitor.request_body_limit',
+            'request body'
+        );
+        if ($requestBodyLimit === false) {
+            return self::FAILURE;
+        }
+        $this->requestBodyCharLimit = $requestBodyLimit;
+
+        $responseBodyLimit = $this->resolveBodyCharLimitOption(
+            'response-body-limit',
+            'context-logging.monitor.response_body_limit',
+            'response body'
+        );
+        if ($responseBodyLimit === false) {
+            return self::FAILURE;
+        }
+        $this->responseBodyCharLimit = $responseBodyLimit;
+
         $autoTruncate = $this->option('auto-truncate');
         if ($autoTruncate !== null && $autoTruncate !== '') {
             $this->autoTruncateBytes = $this->parseSizeToBytes((string) $autoTruncate);
@@ -174,6 +203,63 @@ class MonitorLogsCommand extends Command
         }
 
         return null;
+    }
+
+    /**
+     * Resolve a body character limit from CLI option or config. Returns false on validation failure.
+     */
+    protected function resolveBodyCharLimitOption(string $optionName, string $configKey, string $label): int|false
+    {
+        $optionValue = $this->option($optionName);
+        if ($optionValue !== null && $optionValue !== '') {
+            $validated = filter_var($optionValue, FILTER_VALIDATE_INT);
+            if ($validated === false || $validated < 0) {
+                $this->error("Invalid --{$optionName} value: '{$optionValue}'. Must be a non-negative integer.");
+
+                return false;
+            }
+
+            return (int) $validated;
+        }
+
+        return max(0, (int) config($configKey, 0));
+    }
+
+    /**
+     * Truncate a string to a maximum character length for display (0 = no limit).
+     */
+    protected function truncateStringForDisplay(string $value, int $charLimit): string
+    {
+        if ($charLimit <= 0 || mb_strlen($value) <= $charLimit) {
+            return $value;
+        }
+
+        return mb_substr($value, 0, $charLimit) . '…';
+    }
+
+    /**
+     * Truncate the total length of colorized JSON output lines (0 = no limit).
+     *
+     * @param array<int, string> $lines
+     * @return array<int, string>
+     */
+    protected function truncateColorizedJsonLines(array $lines, int $charLimit): array
+    {
+        if ($charLimit <= 0) {
+            return $lines;
+        }
+
+        $plain = implode("\n", array_map(fn (string $line): string => preg_replace('/<[^>]*>/', '', $line) ?? $line, $lines));
+        if (mb_strlen($plain) <= $charLimit) {
+            return $lines;
+        }
+
+        $truncated = $this->truncateStringForDisplay($plain, $charLimit);
+
+        return array_map(
+            fn (string $line): string => '<fg=#e5e7eb>' . $this->escapeLine($line) . '</>',
+            explode("\n", $truncated)
+        );
     }
 
     /**
@@ -656,17 +742,10 @@ class MonitorLogsCommand extends Command
 
         if (is_array($body) && $body !== []) {
             $this->line($this->renderPrefixedLine('  <fg=#16a34a>│</>', '<fg=#eab308;options=bold>Body:</>'));
-            $colored = $this->colorizeJson($body);
-            $this->outputColorizedJson($colored, '  <fg=#16a34a>│</>');
+            $this->renderBodyContent($body, '  <fg=#16a34a>│</>', $this->requestBodyCharLimit);
         } elseif (!is_array($body) && (string) $body !== '') {
-            $bodyStr = (string) $body;
-            $decoded = json_decode($bodyStr, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $this->line($this->renderPrefixedLine('  <fg=#16a34a>│</>', '<fg=#eab308;options=bold>Body:</>'));
-                $this->outputColorizedJson($this->colorizeJson($decoded), '  <fg=#16a34a>│</>');
-            } else {
-                $this->line($this->renderPrefixedLine('  <fg=#16a34a>│</>', '<fg=#eab308>Body:</> <fg=white>' . $this->escapeLine($bodyStr) . '</>'));
-            }
+            $this->line($this->renderPrefixedLine('  <fg=#16a34a>│</>', '<fg=#eab308;options=bold>Body:</>'));
+            $this->renderBodyContent($body, '  <fg=#16a34a>│</>', $this->requestBodyCharLimit);
         }
 
         if (is_array($queryParams) && $queryParams !== []) {
@@ -712,20 +791,10 @@ class MonitorLogsCommand extends Command
 
         if (is_array($body) && $body !== []) {
             $this->line($this->renderPrefixedLine('  <fg=#c026d3>│</>', '<fg=#eab308;options=bold>Body:</>'));
-            $colored = $this->colorizeJson($body);
-            $this->outputColorizedJson($colored, '  <fg=#c026d3>│</>');
+            $this->renderBodyContent($body, '  <fg=#c026d3>│</>', $this->responseBodyCharLimit);
         } elseif (is_string($body) && $body !== '') {
-            $decoded = json_decode($body, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $this->line($this->renderPrefixedLine('  <fg=#c026d3>│</>', '<fg=#eab308;options=bold>Body:</>'));
-                $colored = $this->colorizeJson($decoded);
-                $this->outputColorizedJson($colored, '  <fg=#c026d3>│</>');
-            } else {
-                $preview = strlen($body) > 500 ? substr($body, 0, 500) . '…' : $body;
-                foreach (explode("\n", $preview) as $bodyLine) {
-                    $this->line($this->renderPrefixedLine('  <fg=#c026d3>│</>', '<fg=#e5e7eb>' . $this->escapeLine($bodyLine) . '</>'));
-                }
-            }
+            $this->line($this->renderPrefixedLine('  <fg=#c026d3>│</>', '<fg=#eab308;options=bold>Body:</>'));
+            $this->renderBodyContent($body, '  <fg=#c026d3>│</>', $this->responseBodyCharLimit);
         }
 
         if (is_array($headers) && $headers !== []) {
@@ -848,7 +917,7 @@ class MonitorLogsCommand extends Command
 
             if (array_key_exists('body', $request) && $request['body'] !== null && $request['body'] !== '') {
                 $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Request Body:</>'));
-                $this->renderBodyContent($request['body'], '  <fg=#0d9488>│</>');
+                $this->renderBodyContent($request['body'], '  <fg=#0d9488>│</>', $this->requestBodyCharLimit);
             }
         }
 
@@ -872,7 +941,7 @@ class MonitorLogsCommand extends Command
 
             if (array_key_exists('body', $response) && $response['body'] !== null && $response['body'] !== '') {
                 $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Response Body:</>'));
-                $this->renderBodyContent($response['body'], '  <fg=#0d9488>│</>');
+                $this->renderBodyContent($response['body'], '  <fg=#0d9488>│</>', $this->responseBodyCharLimit);
             }
         }
 
@@ -883,29 +952,35 @@ class MonitorLogsCommand extends Command
      * Output request/response body content with fallback formatting.
      * @param mixed $body
      */
-    protected function renderBodyContent(mixed $body, string $prefix): void
+    protected function renderBodyContent(mixed $body, string $prefix, int $charLimit = 0): void
     {
         if (is_array($body)) {
-            $this->outputColorizedJson($this->colorizeJson($body), $prefix);
+            $colored = $this->truncateColorizedJsonLines($this->colorizeJson($body), $charLimit);
+            $this->outputColorizedJson($colored, $prefix);
+
             return;
         }
 
         if (is_string($body)) {
             $decoded = json_decode($body, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $this->outputColorizedJson($this->colorizeJson($decoded), $prefix);
+                $colored = $this->truncateColorizedJsonLines($this->colorizeJson($decoded), $charLimit);
+                $this->outputColorizedJson($colored, $prefix);
+
                 return;
             }
 
-            $preview = mb_strlen($body) > 500 ? mb_substr($body, 0, 500) . '…' : $body;
+            $preview = $this->truncateStringForDisplay($body, $charLimit);
             foreach (explode("\n", $preview) as $line) {
                 $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine($line) . '</>'));
             }
+
             return;
         }
 
         $display = is_scalar($body) ? (string) $body : json_encode($body);
-        $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine((string) $display) . '</>'));
+        $preview = $this->truncateStringForDisplay((string) $display, $charLimit);
+        $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine($preview) . '</>'));
     }
 
     /**
