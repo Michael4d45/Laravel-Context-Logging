@@ -346,12 +346,12 @@ class MonitorLogsCommand extends Command
     }
 
     /**
-     * Truncate the total length of colorized JSON output lines (0 = no limit).
+     * Truncate the total length of colorized output lines (0 = no limit).
      *
      * @param array<int, string> $lines
      * @return array<int, string>
      */
-    protected function truncateColorizedJsonLines(array $lines, int $charLimit): array
+    protected function truncateColorizedLines(array $lines, int $charLimit): array
     {
         if ($charLimit <= 0) {
             return $lines;
@@ -368,6 +368,15 @@ class MonitorLogsCommand extends Command
             fn (string $line): string => '<fg=#e5e7eb>' . $this->escapeLine($line) . '</>',
             explode("\n", $truncated)
         );
+    }
+
+    /**
+     * @param array<int, string> $lines
+     * @return array<int, string>
+     */
+    protected function truncateColorizedJsonLines(array $lines, int $charLimit): array
+    {
+        return $this->truncateColorizedLines($lines, $charLimit);
     }
 
     /**
@@ -484,6 +493,122 @@ class MonitorLogsCommand extends Command
         }
 
         return $this->colorizeJsonLines($decoded, 0);
+    }
+
+    protected function isHtmlContent(string $body): bool
+    {
+        $trimmed = ltrim($body);
+        if ($trimmed === '') {
+            return false;
+        }
+
+        if (strncasecmp($trimmed, '<!DOCTYPE html', 15) === 0) {
+            return true;
+        }
+
+        if (strncasecmp($trimmed, '<html', 5) === 0) {
+            return true;
+        }
+
+        return str_starts_with($trimmed, '<') && preg_match('/^<[a-zA-Z!?]/', $trimmed) === 1;
+    }
+
+    /**
+     * @return array<int, string> Lines with Symfony Console color tags
+     */
+    protected function colorizeHtml(string $html): array
+    {
+        return array_map(
+            fn (string $line): string => $this->colorizeHtmlLine($line),
+            explode("\n", $html)
+        );
+    }
+
+    protected function colorizeHtmlLine(string $line): string
+    {
+        if ($line === '') {
+            return '';
+        }
+
+        $parts = preg_split('/(<[^>]+>)/', $line, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        if ($parts === false) {
+            return '<fg=#e5e7eb>' . $this->escapeLine($line) . '</>';
+        }
+
+        $result = '';
+        foreach ($parts as $part) {
+            if (str_starts_with($part, '<')) {
+                $result .= $this->colorizeHtmlToken($part);
+                continue;
+            }
+
+            $result .= '<fg=#e5e7eb>' . $this->escapeLine($part) . '</>';
+        }
+
+        return $result;
+    }
+
+    protected function colorizeHtmlToken(string $token): string
+    {
+        if (str_starts_with($token, '<!--')) {
+            return '<fg=#75715e>' . $this->escapeLine($token) . '</>';
+        }
+
+        if (preg_match('/^<!DOCTYPE/i', $token) === 1 || str_starts_with($token, '<?')) {
+            return '<fg=#75715e>' . $this->escapeLine($token) . '</>';
+        }
+
+        if (preg_match('/^<\/([^>\s\/]+)\s*>$/', $token, $matches) === 1) {
+            return '<fg=#75715e>' . $this->escapeLine('<') . '</>'
+                . '<fg=#75715e>' . $this->escapeLine('/') . '</>'
+                . '<fg=#f92672>' . $this->escapeLine($matches[1]) . '</>'
+                . '<fg=#75715e>' . $this->escapeLine('>') . '</>';
+        }
+
+        if (preg_match('/^<(\/?)([\w:-]+)(.*?)(\/?)>$/s', $token, $matches) !== 1) {
+            return '<fg=#e5e7eb>' . $this->escapeLine($token) . '</>';
+        }
+
+        [, $slash, $tagName, $attrs, $selfClose] = $matches;
+
+        $out = '<fg=#75715e>' . $this->escapeLine('<') . '</>';
+        if ($slash !== '') {
+            $out .= '<fg=#75715e>' . $this->escapeLine('/') . '</>';
+        }
+        $out .= '<fg=#f92672>' . $this->escapeLine($tagName) . '</>';
+        $out .= $this->colorizeHtmlAttributes($attrs);
+        if ($selfClose !== '') {
+            $out .= '<fg=#75715e>' . $this->escapeLine('/') . '</>';
+        }
+        $out .= '<fg=#75715e>' . $this->escapeLine('>') . '</>';
+
+        return $out;
+    }
+
+    protected function colorizeHtmlAttributes(string $attrs): string
+    {
+        if (trim($attrs) === '') {
+            return '';
+        }
+
+        $colored = preg_replace_callback(
+            '/\s+([\w:-]+)(?:\s*=\s*("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\'|[^\s>]+))?/',
+            function (array $matches): string {
+                $name = $matches[1];
+                $value = $matches[2] ?? '';
+                $out = ' ';
+                $out .= '<fg=#a6e22e>' . $this->escapeLine($name) . '</>';
+                if ($value !== '') {
+                    $out .= '<fg=#75715e>' . $this->escapeLine('=') . '</>';
+                    $out .= '<fg=#e6db74>' . $this->escapeLine($value) . '</>';
+                }
+
+                return $out;
+            },
+            $attrs
+        );
+
+        return $colored ?? $this->escapeLine($attrs);
     }
 
     /**
@@ -1081,6 +1206,12 @@ class MonitorLogsCommand extends Command
             }
 
             $preview = $this->truncateStringForDisplay($body, $charLimit);
+            if ($this->isHtmlContent($body)) {
+                $this->outputColorizedJson($this->colorizeHtml($preview), $prefix);
+
+                return;
+            }
+
             foreach (explode("\n", $preview) as $line) {
                 $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine($line) . '</>'));
             }
@@ -1090,6 +1221,12 @@ class MonitorLogsCommand extends Command
 
         $display = is_scalar($body) ? (string) $body : json_encode($body);
         $preview = $this->truncateStringForDisplay((string) $display, $charLimit);
+        if ($this->isHtmlContent((string) $display)) {
+            $this->outputColorizedJson($this->colorizeHtml($preview), $prefix);
+
+            return;
+        }
+
         $this->line($this->renderPrefixedLine($prefix, '<fg=#e5e7eb>' . $this->escapeLine($preview) . '</>'));
     }
 
