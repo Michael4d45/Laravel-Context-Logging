@@ -41,6 +41,12 @@ class MonitorLogsCommand extends Command
     /** @var int Max characters to display for response bodies (0 = no limit) */
     protected int $responseBodyCharLimit = 0;
 
+    /** @var array<int, string> When non-empty, request body limit applies only to matching prefixes */
+    protected array $requestBodyLimitPrefixes = [];
+
+    /** @var array<int, string> When non-empty, response body limit applies only to matching prefixes */
+    protected array $responseBodyLimitPrefixes = [];
+
     public function handle(): int
     {
         $file = $this->argument('file') ?? storage_path('logs/laravel.log');
@@ -63,6 +69,7 @@ class MonitorLogsCommand extends Command
             return self::FAILURE;
         }
         $this->requestBodyCharLimit = $requestBodyLimit;
+        $this->requestBodyLimitPrefixes = $this->resolveBodyLimitPrefixes('request');
 
         $responseBodyLimit = $this->resolveBodyCharLimitOption(
             'response-body-limit',
@@ -73,6 +80,7 @@ class MonitorLogsCommand extends Command
             return self::FAILURE;
         }
         $this->responseBodyCharLimit = $responseBodyLimit;
+        $this->responseBodyLimitPrefixes = $this->resolveBodyLimitPrefixes('response');
 
         $autoTruncate = $this->option('auto-truncate');
         if ($autoTruncate !== null && $autoTruncate !== '') {
@@ -223,6 +231,106 @@ class MonitorLogsCommand extends Command
         }
 
         return max(0, (int) config($configKey, 0));
+    }
+
+    /**
+     * @return array<int, string> Empty = apply body limit to all bodies; non-empty = only matching prefixes
+     */
+    protected function resolveBodyLimitPrefixes(string $type): array
+    {
+        $configKey = $type === 'request'
+            ? 'context-logging.monitor.request_body_limit_only'
+            : 'context-logging.monitor.response_body_limit_only';
+
+        $only = config($configKey, []);
+        if (!is_array($only)) {
+            return [];
+        }
+
+        $doctypeHtml = (bool) ($only['doctype_html'] ?? false);
+        $jsonObject = (bool) ($only['json_object'] ?? false);
+        if (!$doctypeHtml && !$jsonObject) {
+            return [];
+        }
+
+        $prefixes = [];
+        if ($doctypeHtml) {
+            $prefixes[] = '<!DOCTYPE html>';
+        }
+        if ($jsonObject) {
+            $prefixes[] = '{';
+        }
+
+        return $prefixes;
+    }
+
+    /**
+     * Resolve the effective character limit after optional prefix filtering.
+     */
+    protected function effectiveBodyCharLimit(mixed $body, int $charLimit, array $limitPrefixes): int
+    {
+        if ($charLimit <= 0) {
+            return 0;
+        }
+
+        if ($limitPrefixes === []) {
+            return $charLimit;
+        }
+
+        return $this->bodyStartsWithAnyPrefix($body, $limitPrefixes) ? $charLimit : 0;
+    }
+
+    /**
+     * @param array<int, string> $prefixes
+     */
+    protected function bodyStartsWithAnyPrefix(mixed $body, array $prefixes): bool
+    {
+        foreach ($this->bodyPrefixCheckStrings($body) as $candidate) {
+            foreach ($prefixes as $prefix) {
+                if ($this->stringStartsWithPrefix($candidate, $prefix)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function bodyPrefixCheckStrings(mixed $body): array
+    {
+        if (is_string($body)) {
+            return [ltrim($body)];
+        }
+
+        if (is_array($body)) {
+            $encoded = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            return $encoded !== false ? [ltrim($encoded)] : [];
+        }
+
+        if (is_scalar($body)) {
+            return [ltrim((string) $body)];
+        }
+
+        $encoded = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return $encoded !== false ? [ltrim($encoded)] : [];
+    }
+
+    protected function stringStartsWithPrefix(string $value, string $prefix): bool
+    {
+        if ($prefix === '{') {
+            return str_starts_with($value, '{');
+        }
+
+        if (strcasecmp($prefix, '<!DOCTYPE html>') === 0) {
+            return strncasecmp($value, '<!DOCTYPE html>', 15) === 0;
+        }
+
+        return str_starts_with($value, $prefix);
     }
 
     /**
@@ -742,10 +850,10 @@ class MonitorLogsCommand extends Command
 
         if (is_array($body) && $body !== []) {
             $this->line($this->renderPrefixedLine('  <fg=#16a34a>│</>', '<fg=#eab308;options=bold>Body:</>'));
-            $this->renderBodyContent($body, '  <fg=#16a34a>│</>', $this->requestBodyCharLimit);
+            $this->renderBodyContent($body, '  <fg=#16a34a>│</>', $this->requestBodyCharLimit, $this->requestBodyLimitPrefixes);
         } elseif (!is_array($body) && (string) $body !== '') {
             $this->line($this->renderPrefixedLine('  <fg=#16a34a>│</>', '<fg=#eab308;options=bold>Body:</>'));
-            $this->renderBodyContent($body, '  <fg=#16a34a>│</>', $this->requestBodyCharLimit);
+            $this->renderBodyContent($body, '  <fg=#16a34a>│</>', $this->requestBodyCharLimit, $this->requestBodyLimitPrefixes);
         }
 
         if (is_array($queryParams) && $queryParams !== []) {
@@ -791,10 +899,10 @@ class MonitorLogsCommand extends Command
 
         if (is_array($body) && $body !== []) {
             $this->line($this->renderPrefixedLine('  <fg=#c026d3>│</>', '<fg=#eab308;options=bold>Body:</>'));
-            $this->renderBodyContent($body, '  <fg=#c026d3>│</>', $this->responseBodyCharLimit);
+            $this->renderBodyContent($body, '  <fg=#c026d3>│</>', $this->responseBodyCharLimit, $this->responseBodyLimitPrefixes);
         } elseif (is_string($body) && $body !== '') {
             $this->line($this->renderPrefixedLine('  <fg=#c026d3>│</>', '<fg=#eab308;options=bold>Body:</>'));
-            $this->renderBodyContent($body, '  <fg=#c026d3>│</>', $this->responseBodyCharLimit);
+            $this->renderBodyContent($body, '  <fg=#c026d3>│</>', $this->responseBodyCharLimit, $this->responseBodyLimitPrefixes);
         }
 
         if (is_array($headers) && $headers !== []) {
@@ -917,7 +1025,7 @@ class MonitorLogsCommand extends Command
 
             if (array_key_exists('body', $request) && $request['body'] !== null && $request['body'] !== '') {
                 $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Request Body:</>'));
-                $this->renderBodyContent($request['body'], '  <fg=#0d9488>│</>', $this->requestBodyCharLimit);
+                $this->renderBodyContent($request['body'], '  <fg=#0d9488>│</>', $this->requestBodyCharLimit, $this->requestBodyLimitPrefixes);
             }
         }
 
@@ -941,7 +1049,7 @@ class MonitorLogsCommand extends Command
 
             if (array_key_exists('body', $response) && $response['body'] !== null && $response['body'] !== '') {
                 $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308;options=bold>Response Body:</>'));
-                $this->renderBodyContent($response['body'], '  <fg=#0d9488>│</>', $this->responseBodyCharLimit);
+                $this->renderBodyContent($response['body'], '  <fg=#0d9488>│</>', $this->responseBodyCharLimit, $this->responseBodyLimitPrefixes);
             }
         }
 
@@ -952,8 +1060,10 @@ class MonitorLogsCommand extends Command
      * Output request/response body content with fallback formatting.
      * @param mixed $body
      */
-    protected function renderBodyContent(mixed $body, string $prefix, int $charLimit = 0): void
+    protected function renderBodyContent(mixed $body, string $prefix, int $charLimit = 0, array $limitPrefixes = []): void
     {
+        $charLimit = $this->effectiveBodyCharLimit($body, $charLimit, $limitPrefixes);
+
         if (is_array($body)) {
             $colored = $this->truncateColorizedJsonLines($this->colorizeJson($body), $charLimit);
             $this->outputColorizedJson($colored, $prefix);

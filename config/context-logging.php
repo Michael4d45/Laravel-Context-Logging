@@ -114,11 +114,26 @@ return [
     | command. 0 = no limit. CLI options --request-body-limit and
     | --response-body-limit override these values when provided.
     |
+    | When request_body_limit_only / response_body_limit_only flags are enabled,
+    | the corresponding body limit is applied only to bodies that start with
+    | <!DOCTYPE html> or { (JSON object). If both flags are false, the limit
+    | applies to all bodies whenever the limit is greater than 0.
+    |
     */
 
     'monitor' => [
         'request_body_limit' => (int) env('CONTEXT_LOG_MONITOR_REQUEST_BODY_LIMIT', 0),
         'response_body_limit' => (int) env('CONTEXT_LOG_MONITOR_RESPONSE_BODY_LIMIT', 0),
+
+        'request_body_limit_only' => [
+            'doctype_html' => filter_var(env('CONTEXT_LOG_MONITOR_REQUEST_LIMIT_DOCTYPE_HTML', false), FILTER_VALIDATE_BOOL),
+            'json_object' => filter_var(env('CONTEXT_LOG_MONITOR_REQUEST_LIMIT_JSON_OBJECT', false), FILTER_VALIDATE_BOOL),
+        ],
+
+        'response_body_limit_only' => [
+            'doctype_html' => filter_var(env('CONTEXT_LOG_MONITOR_RESPONSE_LIMIT_DOCTYPE_HTML', false), FILTER_VALIDATE_BOOL),
+            'json_object' => filter_var(env('CONTEXT_LOG_MONITOR_RESPONSE_LIMIT_JSON_OBJECT', false), FILTER_VALIDATE_BOOL),
+        ],
     ],
 
 ];
