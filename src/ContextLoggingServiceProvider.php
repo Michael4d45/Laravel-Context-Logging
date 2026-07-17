@@ -57,6 +57,20 @@ class ContextLoggingServiceProvider extends ServiceProvider
             );
         });
 
+        if ((bool) $this->app['config']->get('context-logging.http.guzzle_binding', false)
+            && (bool) $this->app['config']->get('context-logging.http.enabled', false)) {
+            $this->app->bind(\GuzzleHttp\Client::class, function ($app, array $parameters = []) {
+                $config = [];
+
+                if (isset($parameters['config']) && is_array($parameters['config'])) {
+                    $config = $parameters['config'];
+                } elseif ($parameters !== [] && array_is_list($parameters) && is_array($parameters[0] ?? null)) {
+                    $config = $parameters[0];
+                }
+
+                return $app->make(HttpClientInstrumentation::class)->createClient($config);
+            });
+        }
 
         // Extend Laravel's logger to use contextual logging
         $this->app->extend('log', function ($originalLogger, $app) {
@@ -77,6 +91,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
         ], 'config');
 
         if ((bool) config('context-logging.http.enabled', true)) {
+            $this->ensureGuzzlePatchInstalled();
             $this->app->make(HttpClientInstrumentation::class)->register();
         }
 
@@ -102,6 +117,33 @@ class ContextLoggingServiceProvider extends ServiceProvider
         // Note: Middleware registration is intentionally NOT automatic.
         // Users must manually register RequestContextMiddleware and EmitContextMiddleware
         // in their bootstrap/app.php file to have explicit control over middleware ordering.
+    }
+
+    /**
+     * Re-apply the Guzzle Client classmap patch when configured but missing
+     * (e.g. after composer dump-autoload). Affects subsequent PHP processes.
+     */
+    protected function ensureGuzzlePatchInstalled(): void
+    {
+        if (! (bool) config('context-logging.http.guzzle_patch', false)) {
+            return;
+        }
+
+        if (\Michael4d45\ContextLogging\Guzzle\ClientPatch::isClientPatched()) {
+            return;
+        }
+
+        try {
+            (new \Michael4d45\ContextLogging\Guzzle\PatchInstaller())->install(preAutoloadDump: false);
+        } catch (\Throwable $e) {
+            if (function_exists('logger')) {
+                try {
+                    logger()->warning('context-logging: failed to auto-install Guzzle Client patch: '.$e->getMessage());
+                } catch (\Throwable) {
+                    // Ignore.
+                }
+            }
+        }
     }
 
     protected function bootDatabaseLogging(): void

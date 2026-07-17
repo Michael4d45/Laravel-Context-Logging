@@ -1134,7 +1134,11 @@ class MonitorLogsCommand extends Command
             $method = $request['method'] ?? 'GET';
             $reqUrl = (string) $request['url'];
             $methodColor = in_array(strtoupper((string) $method), ['GET', 'HEAD'], true) ? '#22c55e' : '#3b82f6';
-            $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=' . $methodColor . ';options=bold>' . $this->escapeLine((string) $method) . '</> <fg=#0ea5e9>' . $this->escapeLine($reqUrl) . '</>'));
+            $service = $request['service'] ?? null;
+            $serviceSuffix = is_string($service) && $service !== ''
+                ? ' <fg=#a78bfa>[' . $this->escapeLine($service) . ']</>'
+                : '';
+            $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=' . $methodColor . ';options=bold>' . $this->escapeLine((string) $method) . '</> <fg=#0ea5e9>' . $this->escapeLine($reqUrl) . '</>' . $serviceSuffix));
             if ($this->isUrl($reqUrl)) {
                 $this->formatUrl($reqUrl, '#0d9488');
             }
@@ -1164,6 +1168,15 @@ class MonitorLogsCommand extends Command
             }
             if ($duration !== null) {
                 $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#eab308>Duration:</> <fg=#22c55e>' . $this->escapeLine((string) $duration) . 'ms</>'));
+            }
+
+            $error = $response['error'] ?? null;
+            if (is_string($error) && $error !== '') {
+                $errorClass = $response['error_class'] ?? null;
+                $errorLabel = is_string($errorClass) && $errorClass !== ''
+                    ? $errorClass . ': ' . $error
+                    : $error;
+                $this->line($this->renderPrefixedLine('  <fg=#0d9488>│</>', '<fg=#ef4444;options=bold>Error:</> <fg=#fca5a5>' . $this->escapeLine($errorLabel) . '</>'));
             }
 
             $responseHeaders = $response['headers'] ?? [];

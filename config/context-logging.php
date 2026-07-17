@@ -15,6 +15,16 @@ return [
         // Disable this to turn off outbound HTTP auto-capture and sub-context APIs.
         'enabled' => env('CONTEXT_LOG_HTTP_ENABLED', false),
 
+        // Transparent GuzzleHttp\Client constructor patch (sidecar / zero app changes).
+        // The Composer plugin re-applies this on every dump-autoload when allow-plugins
+        // includes michael4d45/context-logging. Falls back to Http::globalMiddleware if
+        // the patch is missing. When the patch is active, facade middleware is skipped.
+        'guzzle_patch' => env('CONTEXT_LOG_HTTP_GUZZLE_PATCH', false),
+
+        // Bind GuzzleHttp\Client in the container to an instrumented factory (DI only; does not
+        // affect `new Client()` — use guzzle_patch for that).
+        'guzzle_binding' => env('CONTEXT_LOG_HTTP_GUZZLE_BINDING', false),
+
         // Capture options for global outbound HTTP instrumentation.
         'capture_headers' => env('CONTEXT_LOG_HTTP_CAPTURE_HEADERS', false),
         'capture_body' => env('CONTEXT_LOG_HTTP_CAPTURE_BODY', false),

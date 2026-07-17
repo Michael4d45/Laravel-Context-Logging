@@ -2,8 +2,15 @@
 
 namespace Michael4d45\ContextLogging\Tests;
 
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Http;
 use Michael4d45\ContextLogging\ContextStore;
+use Michael4d45\ContextLogging\Guzzle\ClientPatch;
 use Michael4d45\ContextLogging\HttpClientInstrumentation;
 use Michael4d45\ContextLogging\HttpContextHooks;
 use PHPUnit\Framework\Attributes\Test;
@@ -15,6 +22,8 @@ class HttpClientInstrumentationTest extends TestCase
         parent::setUp();
 
         config()->set('context-logging.http.enabled', true);
+        config()->set('context-logging.http.guzzle_patch', false);
+        ClientPatch::force(null);
         $this->app->make(HttpClientInstrumentation::class)->register();
 
         HttpContextHooks::clear();
@@ -23,6 +32,7 @@ class HttpClientInstrumentationTest extends TestCase
     protected function tearDown(): void
     {
         HttpContextHooks::clear();
+        ClientPatch::force(null);
         parent::tearDown();
     }
 
@@ -227,5 +237,167 @@ class HttpClientInstrumentationTest extends TestCase
         $this->assertSame('[redacted]', $calls[0]['request']['query_params']['token']);
         $this->assertSame('[redacted]', $calls[0]['request']['query_params']['signature']);
         $this->assertSame('1', $calls[0]['request']['query_params']['page']);
+    }
+
+    #[Test]
+    public function it_instruments_raw_guzzle_clients_via_create_client(): void
+    {
+        $store = $this->app->make(ContextStore::class);
+        $store->initialize();
+
+        $mock = new MockHandler([
+            new Response(204),
+        ]);
+
+        $client = $this->app->make(HttpClientInstrumentation::class)->createClient([
+            'handler' => HandlerStack::create($mock),
+        ]);
+
+        $client->get('https://api.example.com/v1/ping');
+
+        $calls = $store->getHttpCalls();
+
+        $this->assertCount(1, $calls);
+        $this->assertSame('GET', $calls[0]['request']['method']);
+        $this->assertSame(204, $calls[0]['response']['status']);
+        $this->assertArrayHasKey('duration_ms', $calls[0]['response']);
+    }
+
+    #[Test]
+    public function it_pushes_onto_an_existing_handler_stack(): void
+    {
+        $store = $this->app->make(ContextStore::class);
+        $store->initialize();
+
+        $mock = new MockHandler([
+            new Response(200, [], '{"ok":true}'),
+        ]);
+        $stack = HandlerStack::create($mock);
+
+        $this->app->make(HttpClientInstrumentation::class)->pushOnto($stack);
+
+        $client = new Client(['handler' => $stack]);
+        $client->get('https://orders.example.com/orders');
+
+        $calls = $store->getHttpCalls();
+
+        $this->assertCount(1, $calls);
+        $this->assertSame('https://orders.example.com/orders', $calls[0]['request']['url']);
+        $this->assertSame(200, $calls[0]['response']['status']);
+    }
+
+    #[Test]
+    public function it_tags_service_from_request_host(): void
+    {
+        $store = $this->app->make(ContextStore::class);
+        $store->initialize();
+
+        $mock = new MockHandler([
+            new Response(200),
+        ]);
+
+        $client = $this->app->make(HttpClientInstrumentation::class)->createClient([
+            'handler' => HandlerStack::create($mock),
+        ]);
+
+        $client->get('https://api.example.com/api/exams');
+
+        $calls = $store->getHttpCalls();
+
+        $this->assertCount(1, $calls);
+        $this->assertSame('api.example.com', $calls[0]['request']['service']);
+    }
+
+    #[Test]
+    public function it_completes_http_calls_on_transport_failures(): void
+    {
+        $store = $this->app->make(ContextStore::class);
+        $store->initialize();
+
+        $request = new Request('GET', 'https://api.example.com/timeout');
+        $mock = new MockHandler([
+            new ConnectException('Connection timed out', $request),
+        ]);
+
+        $client = $this->app->make(HttpClientInstrumentation::class)->createClient([
+            'handler' => HandlerStack::create($mock),
+            'http_errors' => false,
+        ]);
+
+        try {
+            $client->get('https://api.example.com/timeout');
+            $this->fail('Expected ConnectException');
+        } catch (ConnectException $e) {
+            $this->assertSame('Connection timed out', $e->getMessage());
+        }
+
+        $calls = $store->getHttpCalls();
+
+        $this->assertCount(1, $calls);
+        $this->assertSame(0, $calls[0]['response']['status']);
+        $this->assertSame('Connection timed out', $calls[0]['response']['error']);
+        $this->assertSame(ConnectException::class, $calls[0]['response']['error_class']);
+        $this->assertArrayHasKey('duration_ms', $calls[0]['response']);
+    }
+
+    #[Test]
+    public function it_falls_back_to_http_middleware_when_guzzle_patch_missing(): void
+    {
+        if (ClientPatch::isClientPatched()) {
+            $this->markTestSkipped('Guzzle Client patch is installed in this environment.');
+        }
+
+        config()->set('context-logging.http.enabled', true);
+        config()->set('context-logging.http.guzzle_patch', true);
+
+        $factory = new \Illuminate\Http\Client\Factory;
+        Http::swap($factory);
+
+        $instrumentation = new HttpClientInstrumentation($this->app->make(ContextStore::class));
+        $instrumentation->register();
+
+        $this->assertTrue($instrumentation->guzzlePatchEnabled());
+        // Patch not installed → keep facade middleware so Http:: is still captured.
+        $this->assertNotSame([], $factory->getGlobalMiddleware());
+    }
+
+    #[Test]
+    public function it_skips_http_facade_middleware_when_guzzle_client_is_patched(): void
+    {
+        if (! ClientPatch::isClientPatched()) {
+            $this->markTestSkipped('Guzzle Client patch is not installed in this environment.');
+        }
+
+        config()->set('context-logging.http.enabled', true);
+        config()->set('context-logging.http.guzzle_patch', true);
+
+        $factory = new \Illuminate\Http\Client\Factory;
+        Http::swap($factory);
+
+        $instrumentation = new HttpClientInstrumentation($this->app->make(ContextStore::class));
+        $instrumentation->register();
+
+        $this->assertSame([], $factory->getGlobalMiddleware());
+    }
+
+    #[Test]
+    public function client_patch_apply_is_noop_when_inactive(): void
+    {
+        ClientPatch::force(false);
+
+        $config = ['timeout' => 5];
+        $this->assertSame($config, ClientPatch::apply($config));
+    }
+
+    #[Test]
+    public function client_patch_apply_instruments_when_forced_active(): void
+    {
+        ClientPatch::force(true);
+        config()->set('context-logging.http.enabled', true);
+
+        $config = ClientPatch::apply([]);
+
+        $this->assertArrayHasKey('handler', $config);
+        $this->assertInstanceOf(HandlerStack::class, $config['handler']);
     }
 }

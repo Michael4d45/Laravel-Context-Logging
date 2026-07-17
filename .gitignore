@@ -62,9 +62,9 @@ storage/logs/*
 bootstrap/cache/*
 .phpunit.result.cache
 
-# Build artifacts
-/build/
-/dist/
+# Generated Guzzle Client patch (created by bin/install-guzzle-patch.php)
+/src/Guzzle/Generated/
+
 
 # Documentation builds
 /docs/_build/
