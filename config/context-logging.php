@@ -68,8 +68,9 @@ return [
     |--------------------------------------------------------------------------
     |
     | When enabled, request and response details are added as events to the
-    | context log (only for web requests; ignored in console). Response and
-    | user logging run in terminating middleware.
+    | context log (only for web requests; ignored in console). Incoming Request
+    | is always added when log.request is true (empty body/query keys omitted).
+    | Response and user logging run in terminating middleware.
     |
     */
 

@@ -13,7 +13,8 @@ use Illuminate\Support\Str;
  *
  * Seeds baseline request metadata and establishes correlation identifiers.
  * When request logging is enabled, adds an "Incoming Request" event with
- * masked body, query, headers, and cookies (unless the route is ignored).
+ * masked headers and cookies (unless the route is ignored). Body and query
+ * are included only when non-empty. Method/url/ip remain on outer context.
  */
 class RequestContextMiddleware
 {
@@ -59,23 +60,29 @@ class RequestContextMiddleware
             }
         }
 
-        // Optional: log incoming request body/query as event (method, url, ip, user_agent are already in context) when enabled and route not ignored
+        // Optional ingress event (method/url/ip already on outer context). Always emit when
+        // enabled so timelines stay symmetric with Outgoing Response; omit empty payload keys.
         if (
             config('context-logging.log.request', false)
             && !LoggingHelper::shouldIgnoreRoute($request)
         ) {
-            $body = $request->all();
-            $query = $request->query();
+            $payload = [
+                'headers' => LoggingHelper::maskHeaders($request->headers->all()),
+                'cookies' => LoggingHelper::maskCookies($request->cookies->all()),
+                'timestamp' => now()->toISOString(),
+            ];
 
-            if ($body !== [] || $query !== []) {
-                $this->contextStore->addEvent('info', 'Incoming Request', [
-                    'headers' => LoggingHelper::maskHeaders($request->headers->all()),
-                    'body' => LoggingHelper::maskSensitiveData($body),
-                    'query_params' => LoggingHelper::maskSensitiveData($query),
-                    'cookies' => LoggingHelper::maskCookies($request->cookies->all()),
-                    'timestamp' => now()->toISOString(),
-                ]);
+            $body = LoggingHelper::maskSensitiveData($request->all());
+            $query = LoggingHelper::maskSensitiveData($request->query());
+
+            if ($body !== []) {
+                $payload['body'] = $body;
             }
+            if ($query !== []) {
+                $payload['query_params'] = $query;
+            }
+
+            $this->contextStore->addEvent('info', 'Incoming Request', $payload);
         }
 
         return $next($request);
