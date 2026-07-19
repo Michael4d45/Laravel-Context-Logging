@@ -147,4 +147,25 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Profiling
+    |--------------------------------------------------------------------------
+    |
+    | Local-dev oriented: attach collapsed call-site traces on Log::* events
+    | (same shape as SQL events) and correlate active native profilers onto
+    | the wide-event outer context as join keys (not flamegraph payloads).
+    |
+    */
+
+    'profiling' => [
+        'log_traces' => filter_var(env('CONTEXT_LOG_PROFILING_LOG_TRACES', true), FILTER_VALIDATE_BOOL),
+        'log_trace_min_level' => env('CONTEXT_LOG_PROFILING_LOG_TRACE_MIN_LEVEL', 'debug'),
+        'correlate' => filter_var(env('CONTEXT_LOG_PROFILING_CORRELATE', true), FILTER_VALIDATE_BOOL),
+        'adapters' => ['spx', 'xdebug', 'blackfire'],
+        'spx' => [
+            'ui_base_url' => env('CONTEXT_LOG_SPX_UI_BASE_URL', ''),
+        ],
+    ],
+
 ];

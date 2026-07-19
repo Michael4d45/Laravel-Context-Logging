@@ -3,6 +3,7 @@
 namespace Michael4d45\ContextLogging;
 
 use Illuminate\Log\LogManager;
+use Michael4d45\ContextLogging\Profiling\ProfilerCorrelator;
 
 /**
  * Emits the context store payload to the log.
@@ -21,13 +22,18 @@ class ContextLogEmitter
         'debug' => 7,
     ];
 
-    public static function emit(ContextStore $contextStore, ?int $statusCode, string $message): void
-    {
+    public static function emit(
+        ContextStore $contextStore,
+        ?int $statusCode,
+        string $message,
+        ?ProfilerCorrelator $correlator = null,
+    ): void {
         if ($contextStore->isEmissionSuppressed() || $contextStore->hasBeenEmitted()) {
             return;
         }
 
         $contextStore->finalize($statusCode);
+        self::attachProfilerCorrelation($contextStore, $correlator);
 
         if (!$contextStore->hasEvents()) {
             $contextStore->markEmitted();
@@ -51,6 +57,33 @@ class ContextLogEmitter
 
         $originalLogManager = new LogManager(app());
         $originalLogManager->log($highestLevel, $message, $payload);
+    }
+
+    /**
+     * Attach native profiler join keys to the outer context when correlation is enabled.
+     */
+    private static function attachProfilerCorrelation(
+        ContextStore $contextStore,
+        ?ProfilerCorrelator $correlator = null,
+    ): void {
+        try {
+            $refs = ($correlator ?? new ProfilerCorrelator())->detect();
+        } catch (\Throwable) {
+            return;
+        }
+
+        if ($refs === []) {
+            return;
+        }
+
+        $contextStore->addContext('profile', $refs[0]->toArray());
+
+        if (count($refs) > 1) {
+            $contextStore->addContext(
+                'profiles',
+                array_map(static fn ($ref) => $ref->toArray(), $refs),
+            );
+        }
     }
 
     /**

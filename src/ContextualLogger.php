@@ -3,6 +3,7 @@
 namespace Michael4d45\ContextLogging;
 
 use Illuminate\Log\LogManager;
+use Michael4d45\ContextLogging\Support\TraceHelper;
 
 /**
  * Contextual Logger Implementation.
@@ -12,6 +13,17 @@ use Illuminate\Log\LogManager;
  */
 class ContextualLogger extends LogManager
 {
+    private const SEVERITY_LEVELS = [
+        'emergency' => 0,
+        'alert' => 1,
+        'critical' => 2,
+        'error' => 3,
+        'warning' => 4,
+        'notice' => 5,
+        'info' => 6,
+        'debug' => 7,
+    ];
+
     public function __construct(
         protected ContextStore $contextStore
     ) {
@@ -64,11 +76,48 @@ class ContextualLogger extends LogManager
 
     public function log($level, $message, array $context = []): void
     {
+        $level = (string) $level;
+        $context = $this->maybeAttachTrace($level, $context);
+
         // Only accumulate in context store for wide event (no pass-through)
         $this->contextStore->addEvent(
-            (string) $level,
+            $level,
             (string) $message,
             $context
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function maybeAttachTrace(string $level, array $context): array
+    {
+        if (array_key_exists('trace', $context)) {
+            return $context;
+        }
+
+        if (! (bool) config('context-logging.profiling.log_traces', true)) {
+            return $context;
+        }
+
+        if (! $this->levelMeetsMinimum($level)) {
+            return $context;
+        }
+
+        $context['trace'] = TraceHelper::getCollapsedTrace();
+
+        return $context;
+    }
+
+    private function levelMeetsMinimum(string $level): bool
+    {
+        $minLevel = strtolower((string) config('context-logging.profiling.log_trace_min_level', 'debug'));
+        $eventPriority = self::SEVERITY_LEVELS[strtolower($level)] ?? 7;
+        $minPriority = self::SEVERITY_LEVELS[$minLevel] ?? 7;
+
+        // Lower number = more severe. Include levels at or above the minimum severity
+        // (i.e. priority <= minPriority), matching PSR-3 ordering.
+        return $eventPriority <= $minPriority;
     }
 }
