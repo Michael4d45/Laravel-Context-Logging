@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Tinker\Console\TinkerCommand;
+use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
 use Michael4d45\ContextLogging\Support\TraceHelper;
 
 /**
@@ -216,6 +217,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
         Event::listen(JobProcessing::class, function (JobProcessing $event) use ($store, $trace): void {
             $contextStore = $store();
             $contextStore->initialize();
+            SpxLifecycle::startIfEnabled();
             $jobId = method_exists($event->job, 'getJobId') ? $event->job->getJobId() : null;
             $contextStore->addContexts([
                 'job_id' => $jobId,

@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Michael4d45\ContextLogging\ContextStore;
 use Michael4d45\ContextLogging\LoggingHelper;
+use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
 use Illuminate\Support\Str;
 
 /**
@@ -29,6 +30,7 @@ class RequestContextMiddleware
     {
         // Merge buffered web-only pre-lifecycle events (e.g. route files, channels) into this request.
         $this->contextStore->initialize(true);
+        SpxLifecycle::startIfEnabled();
 
         if (LoggingHelper::shouldIgnoreRoute($request)) {
             $this->contextStore->suppressEmission();

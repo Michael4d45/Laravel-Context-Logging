@@ -165,6 +165,10 @@ return [
         'adapters' => ['spx', 'xdebug', 'blackfire'],
         'spx' => [
             'ui_base_url' => env('CONTEXT_LOG_SPX_UI_BASE_URL', ''),
+            // When true, start SPX on every request (local-dev convenience; no cookie needed).
+            'auto_enable' => filter_var(env('CONTEXT_LOG_SPX_AUTO_ENABLE', false), FILTER_VALIDATE_BOOL),
+            // Must match spx.http_key in php.ini (SPX control panel / report auth).
+            'http_key' => env('CONTEXT_LOG_SPX_HTTP_KEY', 'dev'),
         ],
     ],
 

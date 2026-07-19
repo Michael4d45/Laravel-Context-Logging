@@ -6,13 +6,14 @@ namespace Michael4d45\ContextLogging\Profiling\Adapters;
 
 use Michael4d45\ContextLogging\Profiling\Contracts\ProfilerAdapter;
 use Michael4d45\ContextLogging\Profiling\ProfileRef;
+use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
 
 /**
- * Detects php-spx when the extension is loaded and profiling is enabled
- * via SPX_ENABLED (env/cookie). Does not start/stop the profiler.
+ * Detects php-spx when loaded and SPX_ENABLED / auto_enable.
  *
- * Report keys are only available when the app (or SPX auto mode) produces
- * them; without a key we still mark enabled and optionally link the UI root.
+ * Prefers the report key from spx_profiler_stop() (called at emit time) so the
+ * chip deep-links to /report.html&key=…. Falls back to a same-PID data-dir
+ * scan, then to the SPX control panel root.
  */
 final class SpxAdapter implements ProfilerAdapter
 {
@@ -27,20 +28,25 @@ final class SpxAdapter implements ProfilerAdapter
             return null;
         }
 
-        if (! $this->isEnabled()) {
+        if (! SpxLifecycle::isEnabled()) {
             return null;
         }
 
-        $profileId = $this->resolveReportKey();
+        $profileId = SpxLifecycle::stopAndCaptureKey()
+            ?? SpxLifecycle::lastReportKey()
+            ?? $this->newestReportKeyForPid();
+
         $uiBase = (string) config('context-logging.profiling.spx.ui_base_url', '');
+        $httpKey = (string) config('context-logging.profiling.spx.http_key', 'dev');
         $url = null;
 
         if ($uiBase !== '') {
             $base = rtrim($uiBase, '/');
+            $keyQs = $httpKey !== '' ? 'SPX_KEY='.rawurlencode($httpKey).'&' : '';
             if ($profileId !== null && $profileId !== '') {
-                $url = $base.'/?SPX_UI_URI=/report.html&key='.rawurlencode($profileId);
+                $url = $base.'/?'.$keyQs.'SPX_UI_URI=/report.html&key='.rawurlencode($profileId);
             } else {
-                $url = $base.'/?SPX_UI_URI=/';
+                $url = $base.'/?'.$keyQs.'SPX_UI_URI=/';
             }
         }
 
@@ -51,49 +57,39 @@ final class SpxAdapter implements ProfilerAdapter
             path: null,
             url: $url,
             meta: [
-                'report' => getenv('SPX_REPORT') ?: ($_COOKIE['SPX_REPORT'] ?? null),
+                'report' => getenv('SPX_REPORT') ?: ($_COOKIE['SPX_REPORT'] ?? $_GET['SPX_REPORT'] ?? 'full'),
             ],
         );
     }
 
-    private function isEnabled(): bool
+    private function newestReportKeyForPid(): ?string
     {
-        $env = getenv('SPX_ENABLED');
-        if ($env !== false && $env !== '' && $env !== '0') {
-            return true;
-        }
-
-        $cookie = $_COOKIE['SPX_ENABLED'] ?? null;
-        if ($cookie !== null && $cookie !== '' && $cookie !== '0') {
-            return true;
-        }
-
-        return false;
-    }
-
-    private function resolveReportKey(): ?string
-    {
-        // Manual stop returns the full-report key when SPX_REPORT=full.
-        // Under auto-start we must not call stop(); leave profile_id null.
-        $autoStart = getenv('SPX_AUTO_START');
-        if ($autoStart === false) {
-            $autoStart = $_COOKIE['SPX_AUTO_START'] ?? '1';
-        }
-
-        if ((string) $autoStart !== '0') {
+        $dir = ini_get('spx.data_dir') ?: '/tmp/spx';
+        if (! is_dir($dir)) {
             return null;
         }
 
-        if (! function_exists('spx_profiler_stop')) {
+        $pid = (string) getmypid();
+        $newest = null;
+        $newestMtime = 0;
+
+        foreach (glob(rtrim($dir, '/').'/spx-full-*.json') ?: [] as $file) {
+            $base = pathinfo($file, PATHINFO_FILENAME);
+            if (! preg_match('/-'.preg_quote($pid, '/').'-/', $base)) {
+                continue;
+            }
+
+            $mtime = @filemtime($file) ?: 0;
+            if ($mtime >= $newestMtime) {
+                $newestMtime = $mtime;
+                $newest = $base;
+            }
+        }
+
+        if ($newest === null || (time() - $newestMtime) > 2) {
             return null;
         }
 
-        try {
-            $key = spx_profiler_stop();
-        } catch (\Throwable) {
-            return null;
-        }
-
-        return is_string($key) && $key !== '' ? $key : null;
+        return $newest;
     }
 }
