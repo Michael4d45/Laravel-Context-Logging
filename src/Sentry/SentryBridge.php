@@ -48,8 +48,13 @@ final class SentryBridge
 
     private function installCallbacks(): void
     {
+        $client = null;
+
         try {
-            $client = \Sentry\SentrySdk::getCurrentHub()->getClient();
+            if (function_exists('app') && app()->bound(\Sentry\State\HubInterface::class)) {
+                $client = app(\Sentry\State\HubInterface::class)->getClient();
+            }
+            $client ??= \Sentry\SentrySdk::getCurrentHub()->getClient();
         } catch (\Throwable) {
             return;
         }
