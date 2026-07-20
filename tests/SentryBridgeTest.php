@@ -92,4 +92,35 @@ class SentryBridgeTest extends TestCase
         $event->setMessage('checkout.pay');
         $this->assertNotNull($bridge->normalize($event));
     }
+
+    public function test_normalize_skips_configured_absolute_ignore_paths(): void
+    {
+        config([
+            'context-logging.trace.ignore_paths' => [
+                'vendor',
+                '/opt/portal-extra-packages/vendor',
+            ],
+        ]);
+
+        $store = $this->app->make(ContextStore::class);
+        $bridge = new SentryBridge($store);
+
+        $exception = new \RuntimeException('sidecar frame');
+        $event = Event::createEvent(EventId::generate());
+        $event->setLevel(Severity::error());
+
+        $appFile = base_path('app/Billing/Actions/Fail.php');
+        $sidecar = '/opt/portal-extra-packages/vendor/michael4d45/context-logging/src/Middleware/EmitContextMiddleware.php';
+        $stacktrace = new Stacktrace([
+            new Frame('emit', $sidecar, 41, null, $sidecar, [], false),
+            new Frame('fail', $appFile, 42, null, $appFile, [], true),
+        ]);
+        $event->setExceptions([new ExceptionDataBag($exception, $stacktrace)]);
+
+        $payload = $bridge->normalize($event, EventHint::fromArray(['exception' => $exception]));
+
+        $this->assertNotNull($payload);
+        $this->assertContains('app/Billing/Actions/Fail.php:42', $payload['trace']);
+        $this->assertStringNotContainsString('portal-extra-packages', implode("\n", $payload['trace']));
+    }
 }

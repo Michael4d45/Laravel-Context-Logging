@@ -149,6 +149,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Collapsed Trace Filtering
+    |--------------------------------------------------------------------------
+    |
+    | Directories omitted from collapsed call-site traces (SQL, Log, Sentry,
+    | etc.). Relative entries are resolved under base_path() (e.g. "vendor").
+    | Absolute entries match as-is (e.g. Docker sidecar vendor trees).
+    | Extra paths: CONTEXT_LOG_TRACE_IGNORE_PATHS (comma-separated).
+    |
+    */
+
+    'trace' => [
+        'ignore_paths' => array_values(array_filter(array_merge(
+            ['vendor'],
+            explode(',', (string) env('CONTEXT_LOG_TRACE_IGNORE_PATHS', '')),
+        ))),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Profiling
     |--------------------------------------------------------------------------
     |

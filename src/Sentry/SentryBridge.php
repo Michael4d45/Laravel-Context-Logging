@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Michael4d45\ContextLogging\Sentry;
 
 use Michael4d45\ContextLogging\ContextStore;
+use Michael4d45\ContextLogging\Support\TraceHelper;
 
 /**
  * Captures prepared Sentry SDK events into the ContextStore via before_send.
@@ -263,8 +264,6 @@ final class SentryBridge
         }
 
         $max = max(1, (int) config('context-logging.sentry.max_frames', 40));
-        $basePath = str_replace('\\', '/', (string) (function_exists('base_path') ? base_path() : ''));
-        $vendorPath = $basePath !== '' ? $basePath.'/vendor' : '';
         $lines = [];
 
         /** @var list<object> $frames */
@@ -284,17 +283,14 @@ final class SentryBridge
                 ? str_replace('\\', '/', (string) ($frame->getAbsoluteFilePath() ?? $file))
                 : $file;
 
-            // Only skip the app's own vendor tree. Testbench (and similar) may
-            // live under a path that itself contains "/vendor/".
-            if ($vendorPath !== '' && str_starts_with($absolute, $vendorPath.'/')) {
+            // Skip configured ignore paths (default: app vendor; sidecars can add more).
+            if (TraceHelper::shouldIgnoreFile($absolute) || TraceHelper::shouldIgnoreFile($file)) {
                 continue;
             }
 
             $relative = $this->relativePath($absolute) ?? $this->relativePath($file) ?? $file;
             if (
-                str_starts_with($relative, 'vendor/')
-                || str_starts_with($relative, 'extra-packages/vendor/')
-                || str_contains($relative, 'ContextLogging')
+                str_contains($relative, 'ContextLogging')
                 || str_ends_with($relative, 'artisan')
                 || str_contains($relative, 'public/index.php')
             ) {
