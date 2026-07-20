@@ -19,6 +19,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Tinker\Console\TinkerCommand;
 use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
+use Michael4d45\ContextLogging\Sentry\SentryBridge;
 use Michael4d45\ContextLogging\Support\TraceHelper;
 
 /**
@@ -54,6 +55,12 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         $this->app->singleton(HttpClientInstrumentation::class, function ($app) {
             return new HttpClientInstrumentation(
+                $app->make(ContextStore::class),
+            );
+        });
+
+        $this->app->singleton(SentryBridge::class, function ($app) {
+            return new SentryBridge(
                 $app->make(ContextStore::class),
             );
         });
@@ -114,10 +121,20 @@ class ContextLoggingServiceProvider extends ServiceProvider
         $this->bootScheduleLogging();
         $this->bootNotificationsLogging();
         $this->bootBroadcastingLogging();
+        $this->bootSentryBridge();
 
         // Note: Middleware registration is intentionally NOT automatic.
         // Users must manually register RequestContextMiddleware and EmitContextMiddleware
         // in their bootstrap/app.php file to have explicit control over middleware ordering.
+    }
+
+    protected function bootSentryBridge(): void
+    {
+        if (! (bool) config('context-logging.sentry.enabled', false)) {
+            return;
+        }
+
+        $this->app->make(SentryBridge::class)->register();
     }
 
     /**

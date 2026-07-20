@@ -172,4 +172,30 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Sentry Bridge
+    |--------------------------------------------------------------------------
+    |
+    | When the Sentry PHP SDK is installed, optionally capture prepared Sentry
+    | events (including Sentry\captureException()) into the active ContextStore
+    | via before_send. Local apps can drop transport so Spotlight/DSN receive
+    | nothing and Context Logging becomes the local error viewer.
+    |
+    | Defaults on for APP_ENV=local so Docker sidecars work without app edits.
+    |
+    */
+
+    'sentry' => [
+        'enabled' => filter_var(
+            env('CONTEXT_LOG_SENTRY', env('APP_ENV') === 'local'),
+            FILTER_VALIDATE_BOOL
+        ),
+        // When true, before_send returns null so Spotlight / cloud DSN get nothing.
+        'drop' => filter_var(env('CONTEXT_LOG_SENTRY_DROP', true), FILTER_VALIDATE_BOOL),
+        'capture_transactions' => filter_var(env('CONTEXT_LOG_SENTRY_TRANSACTIONS', false), FILTER_VALIDATE_BOOL),
+        'max_breadcrumbs' => (int) env('CONTEXT_LOG_SENTRY_MAX_BREADCRUMBS', 20),
+        'max_frames' => (int) env('CONTEXT_LOG_SENTRY_MAX_FRAMES', 40),
+    ],
+
 ];
