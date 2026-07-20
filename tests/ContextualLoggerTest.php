@@ -139,4 +139,37 @@ class ContextualLoggerTest extends TestCase
         $this->assertArrayNotHasKey('trace', $events[0]['context']);
         $this->assertArrayHasKey('trace', $events[1]['context']);
     }
+
+    #[Test]
+    public function facade_resolves_contextual_logger_after_provider_clears_stale_cache(): void
+    {
+        // Simulate a stale Facade cache (resolved before extend) without rebound
+        // the container the way Facade::swap() would.
+        $stale = new \Illuminate\Log\LogManager($this->app);
+        $facade = new \ReflectionClass(\Illuminate\Support\Facades\Facade::class);
+        $resolved = $facade->getProperty('resolvedInstance');
+        $resolved->setAccessible(true);
+        $instances = $resolved->getValue();
+        $instances['log'] = $stale;
+        $resolved->setValue(null, $instances);
+
+        $this->assertSame($stale, \Illuminate\Support\Facades\Log::getFacadeRoot());
+        $this->assertInstanceOf(ContextualLogger::class, $this->app->make('log'));
+
+        $provider = new \Michael4d45\ContextLogging\ContextLoggingServiceProvider($this->app);
+        $method = new \ReflectionMethod($provider, 'forgetCachedLogFacade');
+        $method->invoke($provider);
+
+        $this->assertInstanceOf(ContextualLogger::class, \Illuminate\Support\Facades\Log::getFacadeRoot());
+
+        $store = $this->app->make(ContextStore::class);
+        $store->initialize();
+        config()->set('context-logging.profiling.log_traces', false);
+
+        \Illuminate\Support\Facades\Log::info('via-facade', ['ok' => true]);
+
+        $events = $store->getEvents();
+        $this->assertNotEmpty($events);
+        $this->assertSame('via-facade', $events[array_key_last($events)]['message']);
+    }
 }

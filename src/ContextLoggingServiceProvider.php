@@ -86,6 +86,11 @@ class ContextLoggingServiceProvider extends ServiceProvider
                 $app->make(ContextStore::class)
             );
         });
+
+        // Other providers may resolve Log during register()/boot() before this
+        // extend runs. The Facade caches that root forever, so Illuminate\Log
+        // calls would bypass ContextualLogger and write plain Monolog lines.
+        $this->forgetCachedLogFacade();
     }
 
     /**
@@ -123,9 +128,25 @@ class ContextLoggingServiceProvider extends ServiceProvider
         $this->bootBroadcastingLogging();
         $this->bootSentryBridge();
 
+        // Clear again after all providers have registered/booted; a later
+        // provider may have resolved Log between our register() and boot().
+        $this->forgetCachedLogFacade();
+        $this->app->booted(fn () => $this->forgetCachedLogFacade());
+
         // Note: Middleware registration is intentionally NOT automatic.
         // Users must manually register RequestContextMiddleware and EmitContextMiddleware
         // in their bootstrap/app.php file to have explicit control over middleware ordering.
+    }
+
+    protected function forgetCachedLogFacade(): void
+    {
+        if (class_exists(\Illuminate\Support\Facades\Log::class)) {
+            \Illuminate\Support\Facades\Log::clearResolvedInstance('log');
+        }
+
+        if (class_exists(\Michael4d45\ContextLogging\Log::class)) {
+            \Michael4d45\ContextLogging\Log::clearResolvedInstance('log');
+        }
     }
 
     protected function bootSentryBridge(): void
