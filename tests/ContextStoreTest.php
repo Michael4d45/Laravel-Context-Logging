@@ -267,6 +267,9 @@ class ContextStoreTest extends TestCase
         $this->assertSame('https://api.example.com/payments', $httpEvent['context']['request']['url']);
         $this->assertSame(202, $httpEvent['context']['response']['status']);
         $this->assertSame($id, $httpEvent['context']['http_call_id']);
+        $this->assertIsArray($httpEvent['context']['trace']);
+        $this->assertNotEmpty($httpEvent['context']['trace']);
+        $this->assertMatchesRegularExpression('/\.php(:\d+)?$/', $httpEvent['context']['trace'][0]);
     }
 
     #[Test]

@@ -55,6 +55,15 @@ class HttpClientInstrumentationTest extends TestCase
         $this->assertSame('https://api.example.com/ping', $calls[0]['request']['url']);
         $this->assertSame(200, $calls[0]['response']['status']);
         $this->assertArrayNotHasKey('body', $calls[0]['response']);
+        $this->assertIsArray($calls[0]['trace']);
+        $this->assertNotEmpty($calls[0]['trace']);
+
+        $httpEvents = array_values(array_filter(
+            $store->getPayload()['events'],
+            static fn (array $event): bool => $event['message'] === 'HTTP Call',
+        ));
+        $this->assertCount(1, $httpEvents);
+        $this->assertSame($calls[0]['trace'], $httpEvents[0]['context']['trace']);
     }
 
     #[Test]

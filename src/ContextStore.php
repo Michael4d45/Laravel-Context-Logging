@@ -5,6 +5,7 @@ namespace Michael4d45\ContextLogging;
 use Illuminate\Support\Str;
 use Michael4d45\ContextLogging\Profiling\ProfilerEventMarker;
 use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
+use Michael4d45\ContextLogging\Support\TraceHelper;
 
 /**
  * Context Store for accumulating request-wide metadata and log events.
@@ -324,6 +325,10 @@ class ContextStore
                     $timestamp = $httpCall['response']['timestamp'];
                 }
             }
+
+            if (isset($httpCall['trace']) && is_array($httpCall['trace']) && $httpCall['trace'] !== []) {
+                $eventContext['trace'] = $httpCall['trace'];
+            }
             
             if ($timestamp !== null) {
                 $combinedEvents[] = [
@@ -381,10 +386,12 @@ class ContextStore
             $normalizedRequest = $this->httpHookRunner->runBeforeRequest($normalizedRequest);
         }
 
+        // Capture at request start (caller site), not on response completion.
         $this->httpCalls[$id] = [
             'id' => $id,
             'request' => $normalizedRequest,
             'context' => [],
+            'trace' => TraceHelper::getCollapsedTrace(),
         ];
 
         return $id;
