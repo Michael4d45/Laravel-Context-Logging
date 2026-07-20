@@ -155,19 +155,144 @@ class RequestContextMiddleware
 
                 $method = is_string($call['method'] ?? null) ? $call['method'] : null;
                 $params = is_array($call['params'] ?? null) ? $call['params'] : [];
-                $action = isset($params[0]) && is_scalar($params[0])
-                    ? (string) $params[0]
-                    : null;
 
                 $actions[] = [
                     'component' => $component,
                     'component_id' => $componentId,
                     'method' => $method,
-                    'action' => $action,
+                    'action' => $this->summarizeLivewireAction($method, $params),
                 ];
             }
         }
 
         return $actions;
+    }
+
+    /**
+     * Turn Livewire call params into a short, human label.
+     *
+     * Keeps Filament/Livewire action names (e.g. "Approve Order") and summarizes
+     * opaque payloads like __lazyLoad's base64 mount data. Drops junk that would
+     * otherwise inflate explorer chips.
+     *
+     * @param  list<mixed>  $params
+     */
+    private function summarizeLivewireAction(?string $method, array $params): ?string
+    {
+        if ($params === []) {
+            return null;
+        }
+
+        $first = $params[0];
+
+        if (is_array($first)) {
+            return $this->summarizeDecodedLivewirePayload($method, $first);
+        }
+
+        if (! is_scalar($first)) {
+            return null;
+        }
+
+        $value = trim((string) $first);
+        if ($value === '') {
+            return null;
+        }
+
+        if ($this->isHumanLivewireActionLabel($value)) {
+            return $value;
+        }
+
+        $decoded = $this->decodeLivewirePayload($value);
+        if ($decoded !== null) {
+            return $this->summarizeDecodedLivewirePayload($method, $decoded);
+        }
+
+        return null;
+    }
+
+    private function isHumanLivewireActionLabel(string $value): bool
+    {
+        $length = strlen($value);
+        if ($length === 0 || $length > 80) {
+            return false;
+        }
+
+        // Base64-looking blobs (e.g. Livewire/Filament lazy-mount payloads).
+        if ($length > 24 && preg_match('/^[A-Za-z0-9+\/_-]+=*$/', $value) === 1) {
+            return false;
+        }
+
+        if ($value[0] === '{' || $value[0] === '[') {
+            return false;
+        }
+
+        return preg_match('/^[\w\s.\-:\/#]+$/u', $value) === 1;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decodeLivewirePayload(string $value): ?array
+    {
+        if ($value !== '' && ($value[0] === '{' || $value[0] === '[')) {
+            $decoded = json_decode($value, true);
+
+            return is_array($decoded) ? $decoded : null;
+        }
+
+        if (preg_match('/^[A-Za-z0-9+\/_-]+=*$/', $value) !== 1 || strlen($value) < 16) {
+            return null;
+        }
+
+        $json = base64_decode(strtr($value, '-_', '+/'), true);
+        if ($json === false || $json === '') {
+            return null;
+        }
+
+        $decoded = json_decode($json, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param  array<mixed>  $data
+     */
+    private function summarizeDecodedLivewirePayload(?string $method, array $data): ?string
+    {
+        // Filament relation-manager / lazy component mount payload.
+        $forMount = $data['data']['forMount'][0] ?? null;
+        if (is_array($forMount)) {
+            $owner = $forMount['ownerRecord'][1] ?? null;
+            if (is_array($owner) && is_string($owner['class'] ?? null)) {
+                $short = class_basename($owner['class']);
+                $key = $owner['key'] ?? null;
+
+                return is_scalar($key) && (string) $key !== ''
+                    ? $short.'#'.$key
+                    : $short;
+            }
+
+            if (is_string($forMount['pageClass'] ?? null)) {
+                return class_basename($forMount['pageClass']);
+            }
+        }
+
+        foreach (['name', 'action', 'label', 'event'] as $key) {
+            $candidate = $data[$key] ?? null;
+            if (is_string($candidate) && $this->isHumanLivewireActionLabel($candidate)) {
+                return $candidate;
+            }
+        }
+
+        // Nested Filament action params: [['edit'], ...] or ['edit', ...]
+        if (isset($data[0]) && is_string($data[0]) && $this->isHumanLivewireActionLabel($data[0])) {
+            return $data[0];
+        }
+
+        if ($method !== null && str_starts_with($method, '__')) {
+            return null;
+        }
+
+        return null;
     }
 }

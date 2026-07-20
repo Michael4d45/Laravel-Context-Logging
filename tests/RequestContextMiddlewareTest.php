@@ -122,6 +122,100 @@ class RequestContextMiddlewareTest extends TestCase
     }
 
     #[Test]
+    public function it_summarizes_filament_lazy_load_payloads(): void
+    {
+        config()->set('context-logging.log.request', true);
+
+        $contextStore = new ContextStore;
+        $middleware = new RequestContextMiddleware($contextStore);
+        $lazyPayload = base64_encode(json_encode([
+            'data' => [
+                'forMount' => [[
+                    'ownerRecord' => [null, [
+                        'class' => 'App\\Models\\User',
+                        'key' => 5,
+                        's' => 'mdl',
+                    ]],
+                    'pageClass' => 'App\\Filament\\Resources\\UserResource\\Pages\\EditUser',
+                ]],
+            ],
+        ], JSON_THROW_ON_ERROR));
+        $snapshot = json_encode([
+            'data' => [],
+            'memo' => [
+                'id' => 'component-456',
+                'name' => 'App\\Admin\\Resources\\UserResource\\RelationManagers\\ShipmentOrdersRelationManager',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $request = Request::create(
+            'https://example.test/livewire/update',
+            'POST',
+            [
+                'components' => [[
+                    'snapshot' => $snapshot,
+                    'updates' => [],
+                    'calls' => [[
+                        'method' => '__lazyLoad',
+                        'params' => [$lazyPayload],
+                    ]],
+                ]],
+            ],
+        );
+        $request->headers->set('X-Livewire', '1');
+
+        $middleware->handle($request, static fn () => new Response('ok'));
+
+        $event = $contextStore->getEvents()[0];
+        $this->assertSame([[
+            'component' => 'App\\Admin\\Resources\\UserResource\\RelationManagers\\ShipmentOrdersRelationManager',
+            'component_id' => 'component-456',
+            'method' => '__lazyLoad',
+            'action' => 'User#5',
+        ]], $event['context']['livewire_actions']);
+    }
+
+    #[Test]
+    public function it_drops_opaque_livewire_params_that_cannot_be_summarized(): void
+    {
+        config()->set('context-logging.log.request', true);
+
+        $contextStore = new ContextStore;
+        $middleware = new RequestContextMiddleware($contextStore);
+        $snapshot = json_encode([
+            'data' => [],
+            'memo' => [
+                'id' => 'component-789',
+                'name' => 'App\\Livewire\\Widget',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $request = Request::create(
+            'https://example.test/livewire/update',
+            'POST',
+            [
+                'components' => [[
+                    'snapshot' => $snapshot,
+                    'updates' => [],
+                    'calls' => [[
+                        'method' => '__dispatch',
+                        'params' => [base64_encode(str_repeat('x', 64))],
+                    ]],
+                ]],
+            ],
+        );
+        $request->headers->set('X-Livewire', '1');
+
+        $middleware->handle($request, static fn () => new Response('ok'));
+
+        $event = $contextStore->getEvents()[0];
+        $this->assertSame([[
+            'component' => 'App\\Livewire\\Widget',
+            'component_id' => 'component-789',
+            'method' => '__dispatch',
+            'action' => null,
+        ]], $event['context']['livewire_actions']);
+    }
+
+    #[Test]
     public function it_skips_incoming_request_when_request_logging_disabled(): void
     {
         config()->set('context-logging.log.request', false);
