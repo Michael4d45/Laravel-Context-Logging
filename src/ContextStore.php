@@ -3,6 +3,8 @@
 namespace Michael4d45\ContextLogging;
 
 use Illuminate\Support\Str;
+use Michael4d45\ContextLogging\Profiling\ProfilerEventMarker;
+use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
 
 /**
  * Context Store for accumulating request-wide metadata and log events.
@@ -36,6 +38,11 @@ class ContextStore
      * True while draining {@see $preLifecycleQueue} so nested addEvent appends to the queue.
      */
     protected bool $drainingPreLifecycle = false;
+
+    /**
+     * Monotonic marker sequence for native-profiler event correlation.
+     */
+    protected int $profileMarkerSequence = 0;
 
     /**
      * Start timestamp for duration calculation.
@@ -97,6 +104,7 @@ class ContextStore
 
         $this->context = [];
         $this->httpCalls = [];
+        $this->profileMarkerSequence = 0;
         $this->startTime = microtime(true);
         $this->lifecycleStarted = true;
         $this->emitted = false;
@@ -148,6 +156,12 @@ class ContextStore
      */
     public function addEvent(string $level, string $message, array $context = []): void
     {
+        if (SpxLifecycle::isStarted()) {
+            $profileMarkerSequence = ++$this->profileMarkerSequence;
+            ProfilerEventMarker::point($profileMarkerSequence);
+            $context['profile_marker_seq'] = $profileMarkerSequence;
+        }
+
         $event = [
             'level' => $level,
             'message' => $message,
@@ -341,6 +355,7 @@ class ContextStore
         $this->events = [];
         $this->preLifecycleQueue = [];
         $this->httpCalls = [];
+        $this->profileMarkerSequence = 0;
         $this->startTime = null;
         $this->lifecycleStarted = false;
         $this->emitted = false;

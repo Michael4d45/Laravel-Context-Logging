@@ -81,6 +81,47 @@ class RequestContextMiddlewareTest extends TestCase
     }
 
     #[Test]
+    public function it_preserves_a_shallow_livewire_action_summary(): void
+    {
+        config()->set('context-logging.log.request', true);
+
+        $contextStore = new ContextStore;
+        $middleware = new RequestContextMiddleware($contextStore);
+        $snapshot = json_encode([
+            'data' => [],
+            'memo' => [
+                'id' => 'component-123',
+                'name' => 'App\\Livewire\\EditOrder',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $request = Request::create(
+            'https://example.test/livewire-abc123/update',
+            'POST',
+            [
+                'components' => [[
+                    'snapshot' => $snapshot,
+                    'updates' => [],
+                    'calls' => [[
+                        'method' => 'mountAction',
+                        'params' => ['Approve Order'],
+                    ]],
+                ]],
+            ],
+        );
+        $request->headers->set('X-Livewire', '1');
+
+        $middleware->handle($request, static fn () => new Response('ok'));
+
+        $event = $contextStore->getEvents()[0];
+        $this->assertSame([[
+            'component' => 'App\\Livewire\\EditOrder',
+            'component_id' => 'component-123',
+            'method' => 'mountAction',
+            'action' => 'Approve Order',
+        ]], $event['context']['livewire_actions']);
+    }
+
+    #[Test]
     public function it_skips_incoming_request_when_request_logging_disabled(): void
     {
         config()->set('context-logging.log.request', false);

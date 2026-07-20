@@ -90,6 +90,11 @@ final class SpxLifecycle
         return self::$lastReportKey;
     }
 
+    public static function isStarted(): bool
+    {
+        return self::$started;
+    }
+
     public static function isEnabled(): bool
     {
         if (self::autoEnable()) {
