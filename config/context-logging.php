@@ -217,4 +217,30 @@ return [
         'max_frames' => (int) env('CONTEXT_LOG_SENTRY_MAX_FRAMES', 40),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Telegram Bridge
+    |--------------------------------------------------------------------------
+    |
+    | Capture Laravel notification channel "telegram" sends (e.g. Portal
+    | send_techops_alert / SendTelegramMessage) into the ContextStore.
+    | When drop=true, NotificationSending returns false so nothing is posted
+    | to Telegram — local apps can inspect alerts without bot traffic.
+    |
+    | Apps that no-op Telegram outside production (e.g. Portal’s
+    | LOCAL_TELEGRAM_ALERTS gate) still need that env enabled so notifications
+    | are dispatched; this package then captures and optionally drops them.
+    | Defaults on for APP_ENV=local (same pattern as the Sentry bridge).
+    |
+    */
+
+    'telegram' => [
+        'enabled' => filter_var(
+            env('CONTEXT_LOG_TELEGRAM', env('APP_ENV') === 'local'),
+            FILTER_VALIDATE_BOOL
+        ),
+        // When true, cancel the Telegram notification after capturing it.
+        'drop' => filter_var(env('CONTEXT_LOG_TELEGRAM_DROP', true), FILTER_VALIDATE_BOOL),
+    ],
+
 ];

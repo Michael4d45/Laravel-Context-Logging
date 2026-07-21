@@ -21,6 +21,7 @@ use Laravel\Tinker\Console\TinkerCommand;
 use Michael4d45\ContextLogging\Profiling\SpxLifecycle;
 use Michael4d45\ContextLogging\Sentry\SentryBridge;
 use Michael4d45\ContextLogging\Support\TraceHelper;
+use Michael4d45\ContextLogging\Telegram\TelegramBridge;
 
 /**
  * Context Logging Service Provider.
@@ -61,6 +62,12 @@ class ContextLoggingServiceProvider extends ServiceProvider
 
         $this->app->singleton(SentryBridge::class, function ($app) {
             return new SentryBridge(
+                $app->make(ContextStore::class),
+            );
+        });
+
+        $this->app->singleton(TelegramBridge::class, function ($app) {
+            return new TelegramBridge(
                 $app->make(ContextStore::class),
             );
         });
@@ -127,6 +134,7 @@ class ContextLoggingServiceProvider extends ServiceProvider
         $this->bootNotificationsLogging();
         $this->bootBroadcastingLogging();
         $this->bootSentryBridge();
+        $this->bootTelegramBridge();
 
         // Clear again after all providers have registered/booted; a later
         // provider may have resolved Log between our register() and boot().
@@ -156,6 +164,15 @@ class ContextLoggingServiceProvider extends ServiceProvider
         }
 
         $this->app->make(SentryBridge::class)->register();
+    }
+
+    protected function bootTelegramBridge(): void
+    {
+        if (! (bool) config('context-logging.telegram.enabled', false)) {
+            return;
+        }
+
+        $this->app->make(TelegramBridge::class)->register();
     }
 
     /**
@@ -588,8 +605,16 @@ class ContextLoggingServiceProvider extends ServiceProvider
             }
             return is_object($notifiable) ? get_class($notifiable) : (string) $notifiable;
         };
+        // When the Telegram bridge is on, it owns telegram-channel events (message + drop).
+        // Skip the generic notifications logger for that channel to avoid duplicate timeline rows.
+        $skipTelegram = fn ($event): bool => (bool) config('context-logging.telegram.enabled', false)
+            && is_string($event->channel ?? null)
+            && strtolower((string) $event->channel) === 'telegram';
 
-        Event::listen($notificationSending, function ($event) use ($store, $trace, $describeNotifiable): void {
+        Event::listen($notificationSending, function ($event) use ($store, $trace, $describeNotifiable, $skipTelegram): void {
+            if ($skipTelegram($event)) {
+                return;
+            }
             $store()->addEvent('debug', 'notifications', [
                 'event' => 'NotificationSending',
                 'channel' => $event->channel ?? null,
@@ -599,7 +624,10 @@ class ContextLoggingServiceProvider extends ServiceProvider
             ]);
         });
 
-        Event::listen($notificationSent, function ($event) use ($store, $trace, $describeNotifiable): void {
+        Event::listen($notificationSent, function ($event) use ($store, $trace, $describeNotifiable, $skipTelegram): void {
+            if ($skipTelegram($event)) {
+                return;
+            }
             $store()->addEvent('debug', 'notifications', [
                 'event' => 'NotificationSent',
                 'channel' => $event->channel ?? null,
@@ -610,7 +638,10 @@ class ContextLoggingServiceProvider extends ServiceProvider
         });
 
         if (class_exists($notificationFailed)) {
-            Event::listen($notificationFailed, function ($event) use ($store, $describeNotifiable): void {
+            Event::listen($notificationFailed, function ($event) use ($store, $describeNotifiable, $skipTelegram): void {
+                if ($skipTelegram($event)) {
+                    return;
+                }
                 $exception = null;
 
                 if (is_array($event->data ?? null) && array_key_exists('exception', $event->data)) {
