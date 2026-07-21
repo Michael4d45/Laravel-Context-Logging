@@ -34,6 +34,7 @@ class TinkerExecutionListener extends AbstractListener
             'command' => 'tinker',
             'source' => 'tinker',
             'mode' => 'interactive',
+            'input' => $code,
         ]);
 
         return null;

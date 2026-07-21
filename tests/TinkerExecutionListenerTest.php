@@ -54,6 +54,7 @@ class TinkerExecutionListenerTest extends TestCase
 
         $this->assertSame('tinker', $contextStore->getContext('command'));
         $this->assertSame('tinker', $contextStore->getContext('source'));
+        $this->assertSame('Log::info("hello");', $contextStore->getContext('input'));
 
         $listener->afterLoop($shell);
 

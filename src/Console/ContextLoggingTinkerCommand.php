@@ -57,6 +57,7 @@ class ContextLoggingTinkerCommand extends TinkerCommand
                     'command' => 'tinker',
                     'source' => 'tinker',
                     'mode' => 'execute',
+                    'input' => $code,
                 ]);
 
                 $shell->setOutput($this->output);
